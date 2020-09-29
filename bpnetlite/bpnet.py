@@ -34,8 +34,9 @@ class MultichannelMultinomialNLL(object):
 		self.n = n
 
 	def __call__(self, true_counts, logits):
+		#return sum(multinomial_nll(true_counts[:, i], logits[:,i]) for i in range(self.n))
 		for i in range(self.n):
-			loss = multinomial_nll(true_counts[..., i], logits[..., i])
+			loss = multinomial_nll(true_counts[:, i], logits[:, i])
 			if i == 0:
 				total = loss
 			else:
@@ -46,10 +47,12 @@ class MultichannelMultinomialNLL(object):
 		return {"n": self.n}
 
 
-class BPNet(object):
+class BPNet(Model):
 	"""A backpropoganda network."""
 
 	def __init__(self, input_length, output_length):
+		super(BPNet, self).__init__()
+
 		self.input_length = input_length
 		self.output_length = output_length
 
@@ -95,20 +98,8 @@ class BPNet(object):
 			loss_weights=[1, 1])
 		return model
 
-	def fit(self, X, y, **kwargs):
-		"""Fit the model to numpy arrays."""
 
-		pass
+	def fit_from_files(self, sequence, control_signal_plus, control_signal_neg, 
+		output_signal_plus, output_signal_neg, peaks):
 
-	def fit_generator(self, generator, **kwargs):
-		"""Fit the model to a generator."""
-
-		pass
-
-	def predict(self, X, **kwargs):
-
-		pass
-
-	def predict_generator(self, generator, **kwargs):
-
-		pass
+		

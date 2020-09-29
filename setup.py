@@ -5,7 +5,7 @@ setup(
     version='0.0.1',
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
-    packages=['bpnet_lite'],
+    packages=['bpnetlite'],
     url='https://github.com/jmschrei/bpnet-lite',
     license='LICENSE.txt',
     description='bpnet-lite is a minimal implementation of BPNet, a neural network aimed at interpreting regulatory activity of the genome.',
