@@ -47,59 +47,38 @@ class MultichannelMultinomialNLL(object):
 		return {"n": self.n}
 
 
-class BPNet(Model):
-	"""A backpropoganda network."""
+def BPNet(input_length=1000, output_length=1000, n_filters=64, kernel_size=21, n_dilated_layers=6, tconv_kernel_size=75, lr=0.004):
+	sequence = Input(shape=(input_length, 4), name="sequence")
+	control_counts = Input(shape=(1,), name="control_logcount")
+	control_profile = Input(shape=(output_length, 2), name="control_profile")
 
-	def __init__(self, input_length, output_length):
-		super(BPNet, self).__init__()
+	x = Conv1D(n_filters, kernel_size=kernel_size, padding='same', activation='relu')(sequence)
+	layers = [x]
+	for i in range(1, n_dilated_layers+1):
+		layer_sum = x if i == 1 else add(layers)
+		x = Conv1D(n_filters, kernel_size=3, padding='same', activation='relu', dilation_rate=2**i)(layer_sum)
+		layers.append(x)
 
-		self.input_length = input_length
-		self.output_length = output_length
+	layer_sum = add(layers)
+	average_conv = GlobalAvgPool1D()(layer_sum)
 
-		self.n_filters = 64
-		self.kernel_size = 21
-		self.n_dilated_layers = 6
-		self.tconv_kernel_size = 75
-		self.lr = 0.004
-		self.model = self._build_model()
+	# Predict counts
+	x_with_count_bias = concatenate([average_conv, control_counts], axis=-1)
+	y_count = Dense(2, name="task0_logcount")(x_with_count_bias)
 
-	def _build_model(self):
-		sequence = Input(shape=(self.input_length, 4), name="sequence")
-		control_counts = Input(shape=(1,), name="control_logcount")
-		control_profile = Input(shape=(self.output_length, 2), name="control_profile")
+	# Reshape from 1D to 2D
+	layer_sum = Reshape((-1, 1, n_filters))(layer_sum)
+	x_profile = Conv2DTranspose(2, kernel_size=(tconv_kernel_size, 1), padding='same')(layer_sum)
+	x_profile = Reshape((-1, 2))(x_profile)
 
-		x = Conv1D(self.n_filters, kernel_size=self.kernel_size, padding='same', activation='relu')(sequence)
-		layers = [x]
-		for i in range(1, self.n_dilated_layers+1):
-			layer_sum = x if i == 1 else add(layers)
-			x = Conv1D(self.n_filters, kernel_size=3, padding='same', activation='relu', dilation_rate=2**i)(layer_sum)
-			layers.append(x)
+	x_with_profile_bias = concatenate([x_profile, control_profile], axis=-1)
+	y_profile = Conv1D(2, kernel_size=1, name="task0_profile")(x_with_profile_bias)
 
-		layer_sum = add(layers)
-		average_conv = GlobalAvgPool1D()(layer_sum)
-
-		# Predict counts
-		x_with_count_bias = concatenate([average_conv, control_counts], axis=-1)
-		y_count = Dense(2, name="task0_logcount")(x_with_count_bias)
-
-		# Reshape from 1D to 2D
-		layer_sum = Reshape((-1, 1, self.n_filters))(layer_sum)
-
-		x_profile = Conv2DTranspose(2, kernel_size=(self.tconv_kernel_size, 1), padding='same')(layer_sum)
-		x_profile = Reshape((-1, 2))(x_profile)
-
-		x_with_profile_bias = concatenate([x_profile, control_profile], axis=-1)
-		y_profile = Conv1D(2, kernel_size=1, name="task0_profile")(x_with_profile_bias)
-
-		inputs = [sequence, control_counts, control_profile]
-		outputs = [y_count, y_profile]
-		model = Model(inputs=inputs, outputs=outputs)
-		model.compile('adam', loss=['mse', MultichannelMultinomialNLL(2)],
-			loss_weights=[1, 1])
-		return model
+	inputs = [sequence, control_counts, control_profile]
+	outputs = [y_count, y_profile]
+	model = Model(inputs=inputs, outputs=outputs)
+	model.compile('adam', loss=['mse', MultichannelMultinomialNLL(2)],
+		loss_weights=[1, 1])
+	return model
 
 
-	def fit_from_files(self, sequence, control_signal_plus, control_signal_neg, 
-		output_signal_plus, output_signal_neg, peaks):
-
-		

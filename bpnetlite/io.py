@@ -7,7 +7,7 @@ import pyBigWig
 
 from tqdm import tqdm
 
-def sequence_to_ohe(sequence, ignore='N', alphabet=None, dtype='int8', 
+def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8', 
 	verbose=False, **kwargs):
 	"""Converts a string or list of characters into a one-hot encoding.
 
@@ -47,7 +47,7 @@ def sequence_to_ohe(sequence, ignore='N', alphabet=None, dtype='int8',
 
 	Returns
 	-------
-	one : numpy.ndarray
+	ohe : numpy.ndarray
 		A binary matrix of shape (alphabet_size, sequence_length) where
 		alphabet_size is the number of unique elements in the sequence and
 		sequence_length is the length of the input sequence.
@@ -60,6 +60,7 @@ def sequence_to_ohe(sequence, ignore='N', alphabet=None, dtype='int8',
 		sequence = list(sequence)
 
 	alphabet = alphabet or numpy.unique(sequence)
+	alphabet = [char for char in alphabet if char != ignore]
 	alphabet_lookup = {char: i for i, char in enumerate(alphabet)}
 
 	ohe = numpy.zeros((len(sequence), len(alphabet)), dtype=dtype)
@@ -70,12 +71,12 @@ def sequence_to_ohe(sequence, ignore='N', alphabet=None, dtype='int8',
 
 	return ohe
 
-def fasta_to_ohe(filename, include_chroms=None, exclude_chroms=None, 
-	ignore='N', alphabet=['A', 'C', 'G', 'T', 'N'], dtype='int8', verbose=True):
-	"""Read in a FASTA file and output a dictionary of binary encodings.
+def read_fasta(filename, include_chroms=None, exclude_chroms=None, 
+	ignore='N', alphabet=['A', 'C', 'G', 'T', 'N'], verbose=True):
+	"""Read in a FASTA file and output a dictionary of sequences.
 
-	This function will take in the path to a FASTA-formatted file and convert
-	it to a set of one-hot encodings---one for each chromosome. Optionally,
+	This function will take in the path to a FASTA-formatted file and output
+	a string containing the sequence for each chromosome. Optionally,
 	the user can specify a set of chromosomes to include or exclude from
 	the returned dictionary.
 
@@ -105,9 +106,6 @@ def fasta_to_ohe(filename, include_chroms=None, exclude_chroms=None,
 		large sequences. Must include the ignore character. Default is
 		['A', 'C', 'G', 'T', 'N'].
 
-	dtype : str or numpy.dtype, optional
-		The data type of the returned encoding. Default is int8. 
-
 	verbose : bool or str, optional
 		Whether to display a progress bar. If a string is passed in, use as the
 		name of the progressbar. Default is False.
@@ -115,9 +113,9 @@ def fasta_to_ohe(filename, include_chroms=None, exclude_chroms=None,
 	Returns
 	-------
 	chroms : dict
-		A dictionary of one-hot encodings where the keys are the names of the
+		A dictionary of strings where the keys are the names of the
 		chromosomes (exact strings from the header lines in the FASTA file)
-		and the values are the one-hot encodings as numpy arrays.
+		and the values are the strings encoded there.
 	"""
 
 	sequences = {}
@@ -125,10 +123,10 @@ def fasta_to_ohe(filename, include_chroms=None, exclude_chroms=None,
 	skip_chrom = False
 
 	with open(filename, "r") as infile:
-		for line in infile:
+		for line in tqdm(infile, disable=not verbose):
 			if line.startswith(">"):
 				if name is not None and skip_chrom is False:
-					sequences[name] = sequence
+					sequences[name] = ''.join(sequence)
 
 				sequence = []
 				name = line[1:].strip("\n")
@@ -141,157 +139,140 @@ def fasta_to_ohe(filename, include_chroms=None, exclude_chroms=None,
 
 			else:
 				if skip_chrom == False:
-					sequence.extend(list(line.rstrip("\n").upper()))
+					sequence.append(line.rstrip("\n").upper())
 
-	encodings = {}
-	for i, (name, sequence) in enumerate(sequences.items()):
-		encodings[name] = sequence_to_ohe(sequence, ignore=ignore, 
-			alphabet=alphabet, dtype=dtype, position=i,
-			verbose=name if verbose else verbose)
+	return sequences
 
-	return encodings
 
-def bigwig_to_arrays(filename, include_chroms=None, exclude_chroms=None, 
-	 fillna=0, dtype='float32'):
-	"""Read in a bigWig file and output a dictionary of signal arrays.
+def extract_subset(fasta, control_positive_bw, control_negative_bw,
+ 	output_positive_bw, output_negative_bw, peaks, chroms=None, 
+ 	window_width=1000, verbose=True):
+	"""Take in the filenames of the input data and returns an extracted set.
 
-	This function will take in a filename, open it, and output the
-	basepair-resolution signal for the track for all desired chromosomes.
+	This function will take in the filename of the genome FASTA file, the
+	two control bigwig files (positive and negative strand), the two
+	output bigwig files (positive and negative strand), the coordinates
+	of peaks, and the chromosomes for which to extract data for. It will
+	return extracted matrices for the one-hot encoded sequence and the
+	four signals at each peak in the specified chromosomes, centered in
+	the middle of the peak.
 
 	Parameters
 	----------
-	filename : str
-		The path to the bigWig to open.
+	fasta : str
+		The filename of the FASTA file to use. Cannot be gzipped.
 
-	include_chroms : set or tuple or list, optional
-		The exact names of chromosomes in the bigWig file to include, excluding
-		all others. If None, include all chromosomes (except those specified by
-		exclude_chroms). Default is None.
+	control_positive_bw : str
+		The filename of the bigwig containing the control signal on the
+		positive strand.
 
-	exclude_chroms : set or tuple or list, optional
-		The exact names of chromosomes in the bigWig file to exclude, including
-		all others. If None, include all chromosomes (or the set specified by
-		include_chroms). Default is None.
+	control_negative_bw : str
+		The filename of the bigwig containing the control signal on the
+		negative strand.
 
-	fillna : float or None, optional
-		The value to fill NaN values with. If None, keep them as is. Default is 0.
+	output_positive_bw : str
+		The filename of the bigwig containing the target signal on the
+		positive strand.
 
-	dtype : str or numpy.dtype, optional
-		The data type of the returned encoding. Default is int8.
+	output_negative_bw : str
+		The filename of the bigwig containing the target signal on the
+		negative strand.
+
+	peaks : str
+		The filename of the bedgraph file containing a list of peaks, or
+		more generally, the locations to extract data from. Each row in
+		the returned matrix will correspond to a row in this file if the
+		row comes from the specified chromosomes. The examples will be
+		extracted from the center of these peaks and extend half a
+		window width in either direction.
+
+	chroms : list or tuple or None, optional
+		The chromosomes to extract examples from. If None, then uses
+		chr1-22 + chrX. Default is None.
+
+	window_width : int, optional
+		The width of the window for extracting examples. Default is 1000.
+
+	verbose : bool, optional
+		Whether to display a progress bar as examples are being extracted.
 
 	Returns
 	-------
-	signals : dict
-		A dictionary of signal values where the keys are the names of the
-		chromosomes and the values are arrays of signal values.
+	X_sequence : numpy.ndarray, shape=(n, 1000, 4)
+		A one-hot encoded set of examples, derived from each peak falling
+		on the specified chromosomes.
+
+	X_control_positives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the positive
+		strand of the control track, derived from each peak falling on the
+		specified chromosomes.
+
+	X_control_negatives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the negative
+		strand of the control track, derived from each peak falling on the
+		specified chromosomes.
+
+	y_output_positives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the positive
+		strand of the target signal track, derived from each peak falling on 
+		the specified chromosomes.
+
+	y_output_negatives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the negative
+		strand of the target signal track, derived from each peak falling on 
+		the specified chromosomes.
 	"""
 
-	signals = {}
-	chroms = []
+	if chroms is None:
+		chroms = ['chr{}'.format(i) for i in range(1, 23)] + ['chrX']
 
-	bw = pyBigWig.open(filename, "r")
-	for chrom in bw.chroms().keys():
-		if include_chroms and chrom not in include_chroms:
-			continue
-		elif exclude_chroms and chrom in exclude_chroms:
-			continue
-		else:
-			signal = bw.values(chrom, 0, -1, numpy=True).astype(dtype)
-			if fillna is not None:
-				signal = numpy.nan_to_num(signal, nan=fillna, copy=False)
-
-			signals[chrom] = signal
-
-	return signals
-
-
-def data_generator(sequences, input_signals, output_signals, batch_size=64, 
-	input_window_size=1000, output_window_size=1000, random_state=None):
-	"""A data generator for BPNet.
-
-	This function will take in sets of numpy arrays and output batches for
-	the BPNet model. Importantly, each of the inputs here are numpy arrays,
-	not file names. The reasoning is that opening and processing files
-	should be an outside step from generating batches of data from loaded
-	signal. 
+	peaks = pandas.read_csv(peaks, sep='\t', usecols=[0, 1, 2], 
+		names=['chrom', 'start', 'end'])
 	
-	Parameters
-	----------
-	sequences : numpy.ndarray
-		A one-hot encoded sequence, where rows are elements in the sequence
-		and columns are characters in the alphabet. A 1 in the matrix
-		indicates that the element is that character and a 0 indicates that
-		the element is not that character.
+	sequences = read_fasta(fasta, include_chroms=chroms, verbose=True)
+	control_positive_bw = pyBigWig.open(control_positive_bw, 'r')
+	control_negative_bw = pyBigWig.open(control_negative_bw, 'r')
+	output_positive_bw = pyBigWig.open(output_positive_bw, 'r')
+	output_negative_bw = pyBigWig.open(output_negative_bw, 'r')
 
-	input_signals : dict
-		A dictionary of signals where the keys in the dictionary are the
-		names of the signal (and should correspond to inputs to the BPNet
-		model) and the values are dictionaries. These internal dictionaries
-		should have keys being the chromosome and values being a numpy array.
+	X_sequences = []
+	X_control_positives = []
+	X_control_negatives = []
+	y_output_positives = []
+	y_output_negatives = []
 
-	output_signals : dict
-		A dictionary of signals where the keys in the dictionary are the
-		names of the signal (and should correspond to outputs of the BPNet
-		model) and the values are dictionaries. These internal dictionaries
-		should have keys being the chromosome and values being a numpy array.
+	n = peaks.shape[0]
+	for i, peak in tqdm(peaks.iterrows(), disable=not verbose, total=n):
+		chrom = peak['chrom']
+		if chrom not in chroms:
+			continue
 
-	batch_size : int, optional
-		The size of the batches to be produced. Default is 64.
+		mid = (peak['end'] - peak['start']) // 2 + peak['start']
+		start, end = mid - window_width // 2, mid + window_width // 2
 
-	input_window_size : int, optional
-		The size of the input window. The window will be centered along the
-		sampled positions.
+		sequence = one_hot_encode(sequences[chrom][start:end])
+		control_positive = control_positive_bw.values(chrom, start, end, numpy=True)
+		control_positive = numpy.nan_to_num(control_positive)
 
-	output_window_size: int, optional
-		The size of the output window. The window will be centered along the
-		same sampled position as the input window.
+		control_negative = control_negative_bw.values(chrom, start, end, numpy=True)
+		control_negative = numpy.nan_to_num(control_negative)
 
-	random_state : int or numpy.random.RandomState or None
-		The seed to be used.
+		output_positive = output_positive_bw.values(chrom, start, end, numpy=True)
+		output_positive = numpy.nan_to_num(output_positive)
 
-	Yields
-	------
-	batch : tuple
-		A tuple of inputs and outputs for training the BPNet model.
-	"""
+		output_negative = output_negative_bw.values(chrom, start, end, numpy=True)
+		output_negative = numpy.nan_to_num(output_negative)
 
-	chroms = list(sequences.keys())
-	chrom_sizes = [len(sequence) for sequence in sequences.values()]
-	for name, signal in input_signals.items():
-		signal_keys = set(list(signal.keys()))
-		if len(set(chroms).symmetric_difference(signal_keys)) > 0:
-			raise ValueError("{} has a different set of chromosomes from " +
-				"the sequence.".format(name))
+		X_sequences.append(sequence)
+		X_control_positives.append(control_positive)
+		X_control_negatives.append(control_negative)
+		y_output_positives.append(output_positive)
+		y_output_negatives.append(output_negative)
 
-	for name, signal in output_signals.items():
-		signal_keys = set(list(signal.keys()))
-		if len(set(chroms).symmetric_difference(signal_keys)) > 0:
-			raise ValueError("{} has a different set of chromosomes from " +
-				"the sequence.".format(name))
-
-	while True:
-		batch_chroms = numpy.random.choice(chroms, size=batch_size)
-		batch_coords = numpy.random.choice(100, size=batch_size)
-
-		input_starts = batch_coords - input_window_size // 2
-		output_starts = batch_coords - output_window_size // 2
-
-		input_ends = batch_coords - input_window_size // 2 
-		output_ends  = batch_coords - output_window_size // 2
-
-
-		inputs = {}
-		inputs['sequence'] = [sequences[chrom][start:end] for chrom, start, end 
-			in zip(batch_chroms, input_starts, input_ends)]
-
-		for name, signal in input_signals.items():
-			inputs[name] = [signal[chrom][start:end] for chrom, start, end in
-				zip(batch_chroms, input_starts, input_ends)]
-
-		outputs = {}
-		for name, signal in output_signals.items():
-			outputs[name] = [signal[chrom][start:end] for chrom, start, end in
-				zip(batch_chroms, output_starts, output_ends)]
-
-		yield inputs, outputs
-		
+	X_sequences = numpy.array(X_sequences)
+	X_control_positives = numpy.array(X_control_positives)
+	X_control_negatives = numpy.array(X_control_negatives)
+	y_output_positives = numpy.array(y_output_positives)
+	y_output_negatives = numpy.array(y_output_negatives)
+	return (X_sequences, X_control_positives, X_control_negatives, 
+		y_output_positives, y_output_negatives)
