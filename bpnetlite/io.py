@@ -238,8 +238,8 @@ def extract_subset(fasta, control_positive_bw, control_negative_bw,
 	X_sequences = []
 	X_control_positives = []
 	X_control_negatives = []
-	y_output_positives = []
-	y_output_negatives = []
+	y_positives = []
+	y_negatives = []
 
 	n = peaks.shape[0]
 	for i, peak in tqdm(peaks.iterrows(), disable=not verbose, total=n):
@@ -266,13 +266,168 @@ def extract_subset(fasta, control_positive_bw, control_negative_bw,
 		X_sequences.append(sequence)
 		X_control_positives.append(control_positive)
 		X_control_negatives.append(control_negative)
-		y_output_positives.append(output_positive)
-		y_output_negatives.append(output_negative)
+		y_positives.append(output_positive)
+		y_negatives.append(output_negative)
 
 	X_sequences = numpy.array(X_sequences)
 	X_control_positives = numpy.array(X_control_positives)
 	X_control_negatives = numpy.array(X_control_negatives)
-	y_output_positives = numpy.array(y_output_positives)
-	y_output_negatives = numpy.array(y_output_negatives)
+	y_positives = numpy.array(y_positives)
+	y_negatives = numpy.array(y_negatives)
 	return (X_sequences, X_control_positives, X_control_negatives, 
-		y_output_positives, y_output_negatives)
+		y_positives, y_negatives)
+
+def strided_window(x, window):
+	"""A general-purpose function for creating strided windows.
+
+	This function will take in an ndarray and, for each elment
+	along the first axis, create a new axis containing strides
+	along the original data. This is implemented under the
+	name "rolling_window" in seqdataloader.
+
+	For example:
+
+	>>> a = numpy.random.randint(0, 20, size=10)
+	>>> a
+	array([ 6,  8, 12,  9, 12,  9, 17,  5, 16,  4])
+	>>> rolling_window(a, 5)
+	array([[ 6,  8, 12,  9, 12],
+    	   [ 8, 12,  9, 12,  9],
+    	   [12,  9, 12,  9, 17],
+    	   [ 9, 12,  9, 17,  5],
+    	   [12,  9, 17,  5, 16],
+    	   [ 9, 17,  5, 16,  4]])
+
+	Parameters
+	----------
+	x : numpy.ndarray, shape=(n, d)
+		The ndarray to produce strides over.
+
+	window : int
+		The size of the window to produce.
+
+	Returns
+	-------
+	strided_x : numpy.ndarray, shape=(n, d-window+1, window)
+		A version of the array that is strided.
+	"""
+
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return numpy.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+
+def smooth_array(x, smoothing_window):
+	"""This function will calculate a smoothed version of an array.
+
+	This function will take in an ndarray and output a smoothed version of that
+	array. Padding is done on either end using the edge value so that the shape
+	of the output array is equal to the shape f the input array.
+
+	Parameters
+	----------
+	x : numpy.ndarray, shape=(n, d)
+		The array to be smoothed.
+
+	smoothing_window : int
+		The width to smooth over. Each element is smoothed using half of the
+		elements from the left and right hand sides, self inclusive.
+
+	Returns
+	-------
+	y : numpy.ndarray, shape=(n, d)
+		The smoothed array.
+	"""
+
+	left_pad = (smoothing_window - 1) // 2
+	right_pad = (smoothing_window - 1) - left_pad
+
+    padded_x = np.pad(
+        array=x,
+        pad_width=((0,0),(left_pad, right_pad)),
+        mode='edge')
+
+    smoothed_x = rolling_window(padded_x, smoothing_window).mean(axis=2)
+    return smoothed_x
+
+def data_generator(X_sequence, X_control_positives, X_control_negatives,
+	y_positives, y_negatives, smoothing_windows=[1, 50], batch_size=64):
+	"""
+	X_sequence : numpy.ndarray, shape=(n, 1000, 4)
+		A one-hot encoded set of examples, derived from each peak falling
+		on the specified chromosomes.
+
+	X_control_positives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the positive
+		strand of the control track, derived from each peak falling on the
+		specified chromosomes.
+
+	X_control_negatives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the negative
+		strand of the control track, derived from each peak falling on the
+		specified chromosomes.
+
+	y_positives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the positive
+		strand of the target signal track, derived from each peak falling on 
+		the specified chromosomes.
+
+	y_negatives : numpy.ndarray, shape=(n, 1000)
+		A base-pair resolution readout of signal from the negative
+		strand of the target signal track, derived from each peak falling on 
+		the specified chromosomes.
+	"""
+
+
+	X_control_profiles = X_control_negatives + X_control_positives
+	X_control_counts = numpy.log(X_control_profiles.sum(axis=1) + 1)
+
+	X_control_profiles = numpy.concatenate([
+		smooth_array(X_control_profiles, window_size)[:, :, None] 
+			for window_size in smoothing_windows
+	], axis=2)
+
+	y_profiles = numpy.concatenate([y_negatives[:, :, None],
+		y_positives[:, :, None]], axis=2)
+
+	y_counts = numpy.log(y_profiles.sum(axis=(1, 2)) + 1)
+
+	n = X_sequence.shape[0]
+
+	while True:
+		idxs = numpy.random.choice(n, replace=True, size=batch_size)
+
+		X_sequence_ = numpy.concatenate([
+			X_sequence[idxs],
+			X_sequence[idxs, ::-1, ::-1]
+		])
+
+		X_control_profiles_ = numpy.concatenate([
+			X_control_profiles[idxs],
+			X_control_profiles[idxs, ::-1]
+		])
+
+		X_control_counts_ = numpy.concatenate([
+			X_control_counts[idxs],
+			X_control_counts[idxs]
+		])
+
+		y_profiles_ = numpy.concatenate([
+			y_profiles[idxs], y_profiles[idxs, ::-1, ::-1]
+		])
+
+		y_counts_ = numpy.concatenate([
+			y_profiles[idxs], y_profiles[idxs, ::-1, ::-1]
+		])
+
+		X = {
+			'sequence' : X_sequence_,
+			'control_profile' : X_control_profiles_,
+			'control_logcount' : X_control_counts_
+		}
+
+		y = {
+			'task0_profile' : y_profiles_,
+			'task0_logcount' : y_counts_
+		}
+
+		yield X, y
