@@ -3,6 +3,7 @@
 # Code adapted from Avanti Shrikumar and Ziga Avsec
 
 import numpy
+import pandas
 import pyBigWig
 
 from tqdm import tqdm
@@ -145,8 +146,8 @@ def read_fasta(filename, include_chroms=None, exclude_chroms=None,
 
 
 def extract_subset(fasta, control_positive_bw, control_negative_bw,
- 	output_positive_bw, output_negative_bw, peaks, chroms=None, 
- 	window_width=1000, verbose=True):
+	output_positive_bw, output_negative_bw, peaks, chroms=None, 
+	window_width=1000, verbose=True):
 	"""Take in the filenames of the input data and returns an extracted set.
 
 	This function will take in the filename of the genome FASTA file, the
@@ -277,13 +278,12 @@ def extract_subset(fasta, control_positive_bw, control_negative_bw,
 	return (X_sequences, X_control_positives, X_control_negatives, 
 		y_positives, y_negatives)
 
-def strided_window(x, window):
-	"""A general-purpose function for creating strided windows.
+def rolling_window(x, window):
+	"""A general-purpose function for creating rolling windows.
 
 	This function will take in an ndarray and, for each elment
 	along the first axis, create a new axis containing strides
-	along the original data. This is implemented under the
-	name "rolling_window" in seqdataloader.
+	along the original data.
 
 	For example:
 
@@ -292,11 +292,11 @@ def strided_window(x, window):
 	array([ 6,  8, 12,  9, 12,  9, 17,  5, 16,  4])
 	>>> rolling_window(a, 5)
 	array([[ 6,  8, 12,  9, 12],
-    	   [ 8, 12,  9, 12,  9],
-    	   [12,  9, 12,  9, 17],
-    	   [ 9, 12,  9, 17,  5],
-    	   [12,  9, 17,  5, 16],
-    	   [ 9, 17,  5, 16,  4]])
+		   [ 8, 12,  9, 12,  9],
+		   [12,  9, 12,  9, 17],
+		   [ 9, 12,  9, 17,  5],
+		   [12,  9, 17,  5, 16],
+		   [ 9, 17,  5, 16,  4]])
 
 	Parameters
 	----------
@@ -312,9 +312,9 @@ def strided_window(x, window):
 		A version of the array that is strided.
 	"""
 
-    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
-    strides = a.strides + (a.strides[-1],)
-    return numpy.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+	shape = x.shape[:-1] + (x.shape[-1] - window + 1, window)
+	strides = x.strides + (x.strides[-1],)
+	return numpy.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
 
 def smooth_array(x, smoothing_window):
 	"""This function will calculate a smoothed version of an array.
@@ -341,13 +341,13 @@ def smooth_array(x, smoothing_window):
 	left_pad = (smoothing_window - 1) // 2
 	right_pad = (smoothing_window - 1) - left_pad
 
-    padded_x = np.pad(
-        array=x,
-        pad_width=((0,0),(left_pad, right_pad)),
-        mode='edge')
+	padded_x = numpy.pad(
+		array=x,
+		pad_width=((0,0),(left_pad, right_pad)),
+		mode='edge')
 
-    smoothed_x = rolling_window(padded_x, smoothing_window).mean(axis=2)
-    return smoothed_x
+	smoothed_x = rolling_window(padded_x, smoothing_window).mean(axis=2)
+	return smoothed_x
 
 def data_generator(X_sequence, X_control_positives, X_control_negatives,
 	y_positives, y_negatives, smoothing_windows=[1, 50], batch_size=64):
@@ -378,18 +378,18 @@ def data_generator(X_sequence, X_control_positives, X_control_negatives,
 	"""
 
 
-	X_control_profiles = X_control_negatives + X_control_positives
-	X_control_counts = numpy.log(X_control_profiles.sum(axis=1) + 1)
+	X_control_profiles = X_control_positives + X_control_negatives
+	X_control_counts = numpy.log(X_control_profiles.sum(axis=1) + 1)[:, None]
 
 	X_control_profiles = numpy.concatenate([
 		smooth_array(X_control_profiles, window_size)[:, :, None] 
 			for window_size in smoothing_windows
 	], axis=2)
 
-	y_profiles = numpy.concatenate([y_negatives[:, :, None],
-		y_positives[:, :, None]], axis=2)
+	y_profiles = numpy.concatenate([y_positives[:, :, None],
+		y_negatives[:, :, None]], axis=2)
 
-	y_counts = numpy.log(y_profiles.sum(axis=(1, 2)) + 1)
+	y_counts = numpy.log(y_profiles.sum(axis=1) + 1)
 
 	n = X_sequence.shape[0]
 
@@ -416,18 +416,18 @@ def data_generator(X_sequence, X_control_positives, X_control_negatives,
 		])
 
 		y_counts_ = numpy.concatenate([
-			y_profiles[idxs], y_profiles[idxs, ::-1, ::-1]
+			y_counts[idxs], y_counts[idxs, ::-1]
 		])
 
 		X = {
-			'sequence' : X_sequence_,
-			'control_profile' : X_control_profiles_,
-			'control_logcount' : X_control_counts_
+			'sequence' : X_sequence[idxs],
+			'control_profile' : X_control_profiles[idxs],
+			'control_logcount' : X_control_counts[idxs]
 		}
 
 		y = {
-			'task0_profile' : y_profiles_,
-			'task0_logcount' : y_counts_
+			'task0_profile' : y_profiles[idxs],
+			'task0_logcount' : y_counts[idxs]
 		}
 
 		yield X, y
