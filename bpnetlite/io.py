@@ -3,13 +3,14 @@
 # Code adapted from Avanti Shrikumar and Ziga Avsec
 
 import numpy
+import torch
 import pandas
 import pyBigWig
 
 from tqdm import tqdm
 
 def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8', 
-	verbose=False, **kwargs):
+	desc=None, verbose=False, **kwargs):
 	"""Converts a string or list of characters into a one-hot encoding.
 
 	This function will take in either a string or a list and convert it into a
@@ -39,6 +40,9 @@ def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8',
 	dtype : str or numpy.dtype, optional
 		The data type of the returned encoding. Default is int8.
 
+	desc : str or None, optional
+		The title to display in the progress bar.
+
 	verbose : bool or str, optional
 		Whether to display a progress bar. If a string is passed in, use as the
 		name of the progressbar. Default is False.
@@ -54,7 +58,6 @@ def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8',
 		sequence_length is the length of the input sequence.
 	"""
 
-	name = None if verbose in (True, False) else verbose
 	d = verbose is False
 
 	if isinstance(sequence, str):
@@ -65,7 +68,7 @@ def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8',
 	alphabet_lookup = {char: i for i, char in enumerate(alphabet)}
 
 	ohe = numpy.zeros((len(sequence), len(alphabet)), dtype=dtype)
-	for i, char in tqdm(enumerate(sequence), disable=d, desc=name, **kwargs):
+	for i, char in tqdm(enumerate(sequence), disable=d, desc=desc, **kwargs):
 		if char != ignore:
 			idx = alphabet_lookup[char]
 			ohe[i, idx] = 1
@@ -114,9 +117,9 @@ def read_fasta(filename, include_chroms=None, exclude_chroms=None,
 	Returns
 	-------
 	chroms : dict
-		A dictionary of strings where the keys are the names of the
-		chromosomes (exact strings from the header lines in the FASTA file)
-		and the values are the strings encoded there.
+		A dictionary of one-hot encoded sequences where the keys are the names
+		of the chromosomes (exact strings from the header lines in the FASTA file)
+		and the values are the strings.
 	"""
 
 	sequences = {}
@@ -124,7 +127,7 @@ def read_fasta(filename, include_chroms=None, exclude_chroms=None,
 	skip_chrom = False
 
 	with open(filename, "r") as infile:
-		for line in tqdm(infile, disable=not verbose):
+		for line in tqdm(infile, disable=not verbose, desc="Reading FASTA"):
 			if line.startswith(">"):
 				if name is not None and skip_chrom is False:
 					sequences[name] = ''.join(sequence)
@@ -145,289 +148,216 @@ def read_fasta(filename, include_chroms=None, exclude_chroms=None,
 	return sequences
 
 
-def extract_subset(fasta, control_positive_bw, control_negative_bw,
-	output_positive_bw, output_negative_bw, peaks, chroms=None, 
-	window_width=1000, verbose=True):
-	"""Take in the filenames of the input data and returns an extracted set.
+class DataGenerator(torch.utils.data.Dataset):
+	"""A data generator for BPNet inputs.
 
-	This function will take in the filename of the genome FASTA file, the
-	two control bigwig files (positive and negative strand), the two
-	output bigwig files (positive and negative strand), the coordinates
-	of peaks, and the chromosomes for which to extract data for. It will
-	return extracted matrices for the one-hot encoded sequence and the
-	four signals at each peak in the specified chromosomes, centered in
-	the middle of the peak.
-
-	Parameters
-	----------
-	fasta : str
-		The filename of the FASTA file to use. Cannot be gzipped.
-
-	control_positive_bw : str
-		The filename of the bigwig containing the control signal on the
-		positive strand.
-
-	control_negative_bw : str
-		The filename of the bigwig containing the control signal on the
-		negative strand.
-
-	output_positive_bw : str
-		The filename of the bigwig containing the target signal on the
-		positive strand.
-
-	output_negative_bw : str
-		The filename of the bigwig containing the target signal on the
-		negative strand.
-
-	peaks : str
-		The filename of the bedgraph file containing a list of peaks, or
-		more generally, the locations to extract data from. Each row in
-		the returned matrix will correspond to a row in this file if the
-		row comes from the specified chromosomes. The examples will be
-		extracted from the center of these peaks and extend half a
-		window width in either direction.
-
-	chroms : list or tuple or None, optional
-		The chromosomes to extract examples from. If None, then uses
-		chr1-22 + chrX. Default is None.
-
-	window_width : int, optional
-		The width of the window for extracting examples. Default is 1000.
-
-	verbose : bool, optional
-		Whether to display a progress bar as examples are being extracted.
-
-	Returns
-	-------
-	X_sequence : numpy.ndarray, shape=(n, 1000, 4)
-		A one-hot encoded set of examples, derived from each peak falling
-		on the specified chromosomes.
-
-	X_control_positives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the positive
-		strand of the control track, derived from each peak falling on the
-		specified chromosomes.
-
-	X_control_negatives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the negative
-		strand of the control track, derived from each peak falling on the
-		specified chromosomes.
-
-	y_output_positives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the positive
-		strand of the target signal track, derived from each peak falling on 
-		the specified chromosomes.
-
-	y_output_negatives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the negative
-		strand of the target signal track, derived from each peak falling on 
-		the specified chromosomes.
-	"""
-
-	if chroms is None:
-		chroms = ['chr{}'.format(i) for i in range(1, 23)] + ['chrX']
-
-	peaks = pandas.read_csv(peaks, sep='\t', usecols=[0, 1, 2], 
-		names=['chrom', 'start', 'end'])
-	
-	sequences = read_fasta(fasta, include_chroms=chroms, verbose=True)
-	control_positive_bw = pyBigWig.open(control_positive_bw, 'r')
-	control_negative_bw = pyBigWig.open(control_negative_bw, 'r')
-	output_positive_bw = pyBigWig.open(output_positive_bw, 'r')
-	output_negative_bw = pyBigWig.open(output_negative_bw, 'r')
-
-	X_sequences = []
-	X_control_positives = []
-	X_control_negatives = []
-	y_positives = []
-	y_negatives = []
-
-	n = peaks.shape[0]
-	for i, peak in tqdm(peaks.iterrows(), disable=not verbose, total=n):
-		chrom = peak['chrom']
-		if chrom not in chroms:
-			continue
-
-		mid = (peak['end'] - peak['start']) // 2 + peak['start']
-		start, end = mid - window_width // 2, mid + window_width // 2
-
-		sequence = one_hot_encode(sequences[chrom][start:end])
-		control_positive = control_positive_bw.values(chrom, start, end, numpy=True)
-		control_positive = numpy.nan_to_num(control_positive)
-
-		control_negative = control_negative_bw.values(chrom, start, end, numpy=True)
-		control_negative = numpy.nan_to_num(control_negative)
-
-		output_positive = output_positive_bw.values(chrom, start, end, numpy=True)
-		output_positive = numpy.nan_to_num(output_positive)
-
-		output_negative = output_negative_bw.values(chrom, start, end, numpy=True)
-		output_negative = numpy.nan_to_num(output_negative)
-
-		X_sequences.append(sequence)
-		X_control_positives.append(control_positive)
-		X_control_negatives.append(control_negative)
-		y_positives.append(output_positive)
-		y_negatives.append(output_negative)
-
-	X_sequences = numpy.array(X_sequences)
-	X_control_positives = numpy.array(X_control_positives)
-	X_control_negatives = numpy.array(X_control_negatives)
-	y_positives = numpy.array(y_positives)
-	y_negatives = numpy.array(y_negatives)
-	return (X_sequences, X_control_positives, X_control_negatives, 
-		y_positives, y_negatives)
-
-def rolling_window(x, window):
-	"""A general-purpose function for creating rolling windows.
-
-	This function will take in an ndarray and, for each elment
-	along the first axis, create a new axis containing strides
-	along the original data.
-
-	For example:
-
-	>>> a = numpy.random.randint(0, 20, size=10)
-	>>> a
-	array([ 6,  8, 12,  9, 12,  9, 17,  5, 16,  4])
-	>>> rolling_window(a, 5)
-	array([[ 6,  8, 12,  9, 12],
-		   [ 8, 12,  9, 12,  9],
-		   [12,  9, 12,  9, 17],
-		   [ 9, 12,  9, 17,  5],
-		   [12,  9, 17,  5, 16],
-		   [ 9, 17,  5, 16,  4]])
+	This generator takes in an extracted set of sequences, output signals,
+	and control signals, and will return a single element with random
+	jitter and reverse-complement augmentation applied. Jitter is implemented
+	efficiently by taking in data that is wider than the in/out windows by
+	two times the maximum jitter and windows are extracted from that.
+	Essentially, if an input window is 1000 and the maximum jitter is 128, one
+	would pass in data with a length of 1256 and a length 1000 window would be
+	extracted starting between position 0 and 256. This  generator must be 
+	wrapped by a PyTorch generator object.
 
 	Parameters
 	----------
-	x : numpy.ndarray, shape=(n, d)
-		The ndarray to produce strides over.
+	sequences: torch.tensor, shape=(n, 4, in_window+2*max_jitter)
+		A one-hot encoded tensor of `n` example sequences, each of input 
+		length `in_window`. See description above for connection with jitter.
 
-	window : int
-		The size of the window to produce.
+	signals: torch.tensor, shape=(n, t, out_window+2*max_jitter)
+		The signals to predict, usually counts, for `n` examples with
+		`t` output tasks (usually 2 if stranded, 1 otherwise), each of 
+		output length `out_window`. See description above for connection 
+		with jitter.
 
-	Returns
-	-------
-	strided_x : numpy.ndarray, shape=(n, d-window+1, window)
-		A version of the array that is strided.
+	controls: torch.tensor, shape=(n, t, out_window+2*max_jitter)
+		The control signal to take as input, usually counts, for `n`
+		examples with `t` strands and output length `out_window`. 
+
+	in_window: int, optional
+		The input window size. Default is 2114.
+
+	out_window: int, optional
+		The output window size. Default is 1000.
+
+	max_jitter: int, optional
+		The maximum amount of jitter to add, in either direction, to the
+		midpoints that are passed in. Default is 128.
+
+	reverse_complement: bool, optional
+		Whether to reverse complement-augment half of the data. Default is True.
+
+	random_state: int or None, optional
+		Whether to use a deterministic seed or not.
 	"""
 
-	shape = x.shape[:-1] + (x.shape[-1] - window + 1, window)
-	strides = x.strides + (x.strides[-1],)
-	return numpy.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+	def __init__(self, sequences, signals, controls, in_window, out_window, 
+		max_jitter=128, reverse_complement=True, random_state=None):
+		self.in_window = in_window
+		self.out_window = out_window
+		self.max_jitter = max_jitter
+		
+		self.reverse_complement = reverse_complement
+		self.random_state = numpy.random.RandomState(random_state)
 
-def smooth_array(x, smoothing_window):
-	"""This function will calculate a smoothed version of an array.
+		self.signals = signals
+		self.controls = controls
+		self.sequences = sequences	
 
-	This function will take in an ndarray and output a smoothed version of that
-	array. Padding is done on either end using the edge value so that the shape
-	of the output array is equal to the shape f the input array.
+	def __len__(self):
+		return len(self.sequences)
+
+	def __getitem__(self, idx):
+		i = self.random_state.choice(len(self.sequences))
+		j = self.random_state.randint(self.max_jitter*2)
+
+		X = self.sequences[i][:, j:j+self.in_window]
+		X_ctl = self.controls[i][:, j:j+self.out_window]
+		y = self.signals[i][:, j:j+self.out_window]
+
+		if self.reverse_complement and numpy.random.choice(2) == 1:
+			X = X[::-1][:, ::-1]
+			y = y[::-1][:, ::-1]
+			X_ctl = X_ctl[::-1][:, ::-1]
+
+		X = torch.tensor(X.copy(), dtype=torch.float32)
+		X_ctl = torch.tensor(X_ctl.copy(), dtype=torch.float32)
+		y = torch.tensor(y.copy())
+		return X, X_ctl, y
+
+
+def extract_peaks(sequences, plus_bw_path, minus_bw_path, plus_ctl_bw_path, 
+	minus_ctl_bw_path, peak_path, chroms, in_window=2114, out_window=1000, 
+	max_jitter=128, verbose=False):
+	"""Extract data directly from fasta and bigWig files.
+
+	This function will take in the file path to a fasta file and stranded
+	signal and control files as well as other parameters. It will then
+	extract the data to the specified window lengths with jitter added to
+	each side for efficient jitter extraction. If you don't want jitter,
+	set that to 0.
 
 	Parameters
 	----------
-	x : numpy.ndarray, shape=(n, d)
-		The array to be smoothed.
+	sequence_path: str or dictionary
+		Either the path to a fasta file to read from or a dictionary where the
+		keys are the unique set of chromosoms and the values are one-hot
+		encoded sequences as numpy arrays or memory maps.
 
-	smoothing_window : int
-		The width to smooth over. Each element is smoothed using half of the
-		elements from the left and right hand sides, self inclusive.
+	plus_bw_path: str
+		Path to the bigWig containing the signal values on the positive strand.
+
+	minus_bw_path: str
+		Path to the bigWig containing the signal values on the negative strand.
+
+	plus_ctl_bw_path: str
+		Path to the bigWig containing the control values on the positive strand.
+
+	minus_ctl_bw_path: str
+		Path to the bigWig containing the control values on the negative strand.
+
+	peak_path: str
+		Path to a peak bed file. The file can have more than three columns as
+		long as the first three columns are (chrom, start, end).
+
+	chroms: list
+		A set of chromosomes to extact peaks from. Peaks in other chromosomes
+		are ignored.
+
+	in_window: int, optional
+		The input window size. Default is 2114.
+
+	out_window: int, optional
+		The output window size. Default is 1000.
+
+	max_jitter: int, optional
+		The maximum amount of jitter to add, in either direction, to the
+		midpoints that are passed in. Default is 128.
+
+	verbose: bool, optional
+		Whether to display a progress bar while loading. Default is False.
 
 	Returns
 	-------
-	y : numpy.ndarray, shape=(n, d)
-		The smoothed array.
+	seqs: numpy.ndarray, shape=(n, 4, in_window+2*max_jitter)
+		The extracted sequences in the same order as the chrom and mid arrays.
+
+	signals: numpy.ndarray, shape=(n, 2, out_window+2*max_jitter)
+		The extracted stranded signals in the same order as the chrom and mid
+		arrays.
+
+	controls: numpy.ndarray, shape=(n, 2, out_window+2*max_jitter)
+		The extracted stranded signals in the same order as the chrom and mid
+		arrays.
 	"""
 
-	left_pad = (smoothing_window - 1) // 2
-	right_pad = (smoothing_window - 1) - left_pad
+	seqs, signals, controls = [], [], []
+	in_width, out_width = in_window // 2, out_window // 2
 
-	padded_x = numpy.pad(
-		array=x,
-		pad_width=((0,0),(left_pad, right_pad)),
-		mode='edge')
+	if isinstance(sequences, str):
+		sequences = read_fasta(sequences, include_chroms=chroms, 
+			verbose=verbose)
 
-	smoothed_x = rolling_window(padded_x, smoothing_window).mean(axis=2)
-	return smoothed_x
+	names = ['chrom', 'start', 'end']
+	peaks = pandas.read_csv(peak_path, sep="\t", usecols=(0, 1, 2), 
+		header=None, index_col=False, names=names)
+	peaks = peaks[numpy.isin(peaks['chrom'], chroms)]
 
-def data_generator(X_sequence, X_control_positives, X_control_negatives,
-	y_positives, y_negatives, smoothing_windows=[1, 50], batch_size=64):
-	"""
-	X_sequence : numpy.ndarray, shape=(n, 1000, 4)
-		A one-hot encoded set of examples, derived from each peak falling
-		on the specified chromosomes.
+	plus_bw = pyBigWig.open(plus_bw_path, "r")
+	minus_bw = pyBigWig.open(minus_bw_path, "r")
 
-	X_control_positives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the positive
-		strand of the control track, derived from each peak falling on the
-		specified chromosomes.
+	plus_ctl_bw = pyBigWig.open(plus_ctl_bw_path, "r")
+	minus_ctl_bw = pyBigWig.open(minus_ctl_bw_path, "r")
 
-	X_control_negatives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the negative
-		strand of the control track, derived from each peak falling on the
-		specified chromosomes.
+	desc = "Loading Peaks"
+	d = not verbose
+	for _, (chrom, start, end) in tqdm(peaks.iterrows(), disable=d, desc=desc):
+		mid = start + (end - start) // 2
+		start = mid - out_width - max_jitter
+		end = mid + out_width + max_jitter
 
-	y_positives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the positive
-		strand of the target signal track, derived from each peak falling on 
-		the specified chromosomes.
+		sequence = sequences[chrom]
 
-	y_negatives : numpy.ndarray, shape=(n, 1000)
-		A base-pair resolution readout of signal from the negative
-		strand of the target signal track, derived from each peak falling on 
-		the specified chromosomes.
-	"""
+		# Load plus strand signal
+		plus_sig = plus_bw.values(chrom, start, end, numpy=True)
+		plus_sig = numpy.nan_to_num(plus_sig)
 
+		# Load minus strand signal
+		minus_sig = minus_bw.values(chrom, start, end, numpy=True)
+		minus_sig = numpy.nan_to_num(minus_sig)
 
-	X_control_profiles = X_control_positives + X_control_negatives
-	X_control_counts = numpy.log(X_control_profiles.sum(axis=1) + 1)[:, None]
+		# Load plus strand control
+		plus_ctl = plus_ctl_bw.values(chrom, start, end, numpy=True)
+		plus_ctl = numpy.nan_to_num(plus_ctl)
 
-	X_control_profiles = numpy.concatenate([
-		smooth_array(X_control_profiles, window_size)[:, :, None] 
-			for window_size in smoothing_windows
-	], axis=2)
+		# Load minus strand control
+		minus_ctl = minus_ctl_bw.values(chrom, start, end, numpy=True)
+		minus_ctl = numpy.nan_to_num(minus_ctl)
 
-	y_profiles = numpy.concatenate([y_positives[:, :, None],
-		y_negatives[:, :, None]], axis=2)
+		# Append signal to growing signal list
+		sig = numpy.array([plus_sig, minus_sig])
+		signals.append(sig)
 
-	y_counts = numpy.log(y_profiles.sum(axis=1) + 1)
+		# Append control to growing control list
+		ctl = numpy.array([plus_ctl, minus_ctl])
+		controls.append(ctl)
 
-	n = X_sequence.shape[0]
+		# Append sequence to growing sequence list
+		s = mid - in_width - max_jitter
+		e = mid + in_width + max_jitter
 
-	while True:
-		idxs = numpy.random.choice(n, replace=True, size=batch_size)
+		if isinstance(sequence, str):
+			seq = one_hot_encode(sequence[s:e], alphabet=['A', 'C', 'G', 'T', 
+				'N']).T
+		else:
+			seq = sequence[s:e].T
+		
+		seqs.append(seq)
 
-		X_sequence_ = numpy.concatenate([
-			X_sequence[idxs],
-			X_sequence[idxs, ::-1, ::-1]
-		])
-
-		X_control_profiles_ = numpy.concatenate([
-			X_control_profiles[idxs],
-			X_control_profiles[idxs, ::-1]
-		])
-
-		X_control_counts_ = numpy.concatenate([
-			X_control_counts[idxs],
-			X_control_counts[idxs]
-		])
-
-		y_profiles_ = numpy.concatenate([
-			y_profiles[idxs], y_profiles[idxs, ::-1, ::-1]
-		])
-
-		y_counts_ = numpy.concatenate([
-			y_counts[idxs], y_counts[idxs, ::-1]
-		])
-
-		X = {
-			'sequence' : X_sequence[idxs],
-			'control_profile' : X_control_profiles[idxs],
-			'control_logcount' : X_control_counts[idxs]
-		}
-
-		y = {
-			'task0_profile' : y_profiles[idxs],
-			'task0_logcount' : y_counts[idxs]
-		}
-
-		yield X, y
+	signals = numpy.array(signals)
+	controls = numpy.array(controls)
+	seqs = numpy.array(seqs)
+	return seqs, signals, controls

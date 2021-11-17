@@ -1,84 +1,236 @@
 # bpnet.py
-# Author: Jacob Schreiber
-# Code adapted from Avanti Shrikumar and Ziga Avsec
+# Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
-import keras
+"""
+This module contains a reference implementation of BPNet that can be used
+or adapted for your own circumstances. The implementation takes in a
+stranded control track and makes predictions for stranded outputs.
+"""
+
+import time 
 import numpy
+import torch
 
-from keras.layers import Input, Dense, Conv1D, GlobalAvgPool1D, Conv2DTranspose
-from keras.layers import add, concatenate, Reshape, Lambda
+from .losses import MNLLLoss
+from .losses import log1pMSELoss
 
-from keras.models import Model
+from .performance import pearson_corr
+from .performance import multinomial_log_probs
+from .performance import compute_performance_metrics
 
-import tensorflow as tf
-import tensorflow_probability as tfp
+torch.backends.cudnn.benchmark = True
 
+class BPNet(torch.nn.Module):
+	"""A basic BPNet model with stranded profile and total count prediction.
 
-def multinomial_nll(true_counts, logits):
-	"""Compute the multinomial negative log-likelihood
-	Args:
-		true_counts: observed count values
-		logits: predicted logit values
+	This is a reference implementation for BPNet. The model takes in
+	one-hot encoded sequence, runs it through: 
+
+	(1) a single wide convolution operation 
+	(2) a user-defined number of dilated residual convolutions
+
+	(3a) profile predictions done using a very wide convolution layer 
+	that also takes in stranded control tracks 
+
+	AND
+
+	(3b) total count prediction done using an average pooling on the output
+	from 2 followed by concatenation with the log1p of the sum of the
+	stranded control tracks and then run through a dense layer.
+
+	This implementation differs from the original BPNet implementation in
+	two ways:
+
+	(1) The model concatenates stranded control tracks for profile
+	prediction as opposed to adding the two strands together and also then
+	smoothing that track 
+
+	(2) The control input for the count prediction task is the log1p of
+	the strand-wise sum of the control tracks, as opposed to the raw
+	counts themselves.
+
+	(3) A single log softmax is applied across both strands such that
+	the logsumexp of both strands together is 0. Put another way, the
+	two strands are concatenated together, a log softmax is applied,
+	and the MNLL loss is calculated on the concatenation. 
+
+	(4) The count prediction task is predicting the total counts across
+	both strands. The counts are then distributed across strands according
+	to the single log softmax from 3.
+
+	Parameters
+	----------
+	n_filters: int, optional
+		The number of filters to use per convolution. Default is 64.
+
+	n_layers: int, optional
+		The number of dilated residual layers to include in the model.
+		Default is 8.
+
+	alpha: float, optional
+		The weight to put on the count loss.
+
+	trimming: int or None, optional
+		The amount to trim from both sides of the input window to get the
+		output window. This value is removed from both sides, so the total
+		number of positions removed is 2*trimming.
 	"""
-	counts_per_example = tf.reduce_sum(true_counts, axis=-1)
-	dist = tfp.distributions.Multinomial(total_count=counts_per_example,
-										 logits=logits)
-	return (-tf.reduce_sum(dist.log_prob(true_counts)) / 
-			tf.cast(tf.shape(true_counts)[0], 'float32'))
 
+	def __init__(self, n_filters=64, n_layers=8, alpha=1, trimming=None):
+		super(BPNet, self).__init__()
+		self.n_filters = n_filters
+		self.n_layers = n_layers
+		self.alpha = alpha
+		self.trimming = trimming or 2 ** n_layers
 
-#from https://github.com/kundajelab/basepair/blob/cda0875571066343cdf90aed031f7c51714d991a/basepair/losses.py#L87
-class MultichannelMultinomialNLL(object):
-	def __init__(self, n):
-		self.__name__ = "MultichannelMultinomialNLL"
-		self.n = n
+		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
 
-	def __call__(self, true_counts, logits):
-		#return sum(multinomial_nll(true_counts[:, i], logits[:,i]) for i in range(self.n))
-		for i in range(self.n):
-			loss = multinomial_nll(true_counts[..., i], logits[..., i])
-			if i == 0:
-				total = loss
-			else:
-				total += loss
-		return total
+		self.rconvs = torch.nn.ModuleList([
+			torch.nn.Conv1d(n_filters, n_filters, kernel_size=3, padding=2**i, 
+				dilation=2**i) for i in range(1, self.n_layers+1)
+		])
 
-	def get_config(self):
-		return {"n": self.n}
+		self.fconv = torch.nn.Conv1d(n_filters+2, 2, kernel_size=75, padding=37)
+		self.relu = torch.nn.ReLU()
+		self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
+		self.linear = torch.nn.Linear(n_filters+2, 2)
 
-def BPNet(input_length=1000, output_length=1000, n_filters=64, kernel_size=21, n_dilated_layers=6, tconv_kernel_size=75, lr=0.004):
-	sequence = Input(shape=(input_length, 4), name="sequence")
-	control_counts = Input(shape=(1,), name="control_logcount")
-	control_profile = Input(shape=(output_length, 2), name="control_profile")
+	def forward(self, X, X_ctl):
+		start, end = self.trimming, X.shape[2] - self.trimming
 
-	x = Conv1D(n_filters, kernel_size=kernel_size, padding='same', activation='relu')(sequence)
-	layers = [x]
-	for i in range(1, n_dilated_layers+1):
-		layer_sum = x if i == 1 else add(layers)
-		x = Conv1D(n_filters, kernel_size=3, padding='same', activation='relu', dilation_rate=2**i)(layer_sum)
-		layers.append(x)
+		X = self.relu(self.iconv(X))
+		for i in range(self.n_layers):
+			X_conv = self.relu(self.rconvs[i](X))
+			X = torch.add(X, X_conv)
 
-	layer_sum = add(layers)
-	average_conv = GlobalAvgPool1D()(layer_sum)
+		X = X[:, :, start:end]
 
-	# Predict counts
-	x_with_count_bias = concatenate([average_conv, control_counts], axis=-1)
-	y_count = Dense(2, name="task0_logcount")(x_with_count_bias)
+		X_ = torch.cat([X, X_ctl], dim=1)
+		y_profile = self.fconv(X_)
+		#y_profile = y_profile.reshape(X_.shape[0], -1)
+		y_profile = self.logsoftmax(y_profile)
+		#y_profile = y_profile.reshape(X.shape[0], 2, -1)
 
-	# Reshape from 1D to 2D
-	layer_sum = Reshape((-1, 1, n_filters))(layer_sum)
-	x_profile = Conv2DTranspose(2, kernel_size=(tconv_kernel_size, 1), padding='same')(layer_sum)
-	x_profile = Reshape((-1, 2))(x_profile)
+		# counts prediction
+		X_ctl = torch.sum(X_ctl, axis=2)
 
-	x_with_profile_bias = concatenate([x_profile, control_profile], axis=-1)
-	y_profile = Conv1D(2, kernel_size=1, name="task0_profile")(x_with_profile_bias)
+		X = torch.mean(X, axis=2)
+		#X = torch.exp(self.linear1(X))
+		#X =	X + self.alpha * X_ctl
 
-	inputs = [sequence, control_counts, control_profile]
-	outputs = [y_count, y_profile]
-	model = Model(inputs=inputs, outputs=outputs)
-	model.compile('adam', loss=['mse', MultichannelMultinomialNLL(2)],
-		loss_weights=[1, 1])
-	return model
+		X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
+		y_counts = self.linear(X).squeeze()
 
+		#y_counts = torch.log(X+1).squeeze()
+		return y_profile, y_counts
 
+	def predict(self, X, X_ctl, batch_size=64):
+		with torch.no_grad():
+			starts = numpy.arange(0, X.shape[0], batch_size)
+			ends = starts + batch_size
+
+			y_profiles, y_counts = [], []
+			for start, end in zip(starts, ends):
+				X_batch = X[start:end]
+				X_ctl_batch = X_ctl[start:end]
+
+				y_profiles_, y_counts_ = self(X_batch, X_ctl_batch)
+				
+				y_profiles.append(y_profiles_.cpu().detach().numpy())
+				y_counts.append(y_counts_.cpu().detach().numpy())
+
+			y_profiles = numpy.concatenate(y_profiles)
+			y_counts = numpy.concatenate(y_counts)
+			return y_profiles, y_counts
+
+	def fit_generator(self, training_data, optimizer, X_valid=None, 
+		X_ctl_valid=None, y_valid=None, max_epochs=100, batch_size=64, 
+		validation_iter=100, verbose=True):
+
+		if X_valid is not None:
+			X_valid = torch.tensor(X_valid, dtype=torch.float32).cuda()
+			X_ctl_valid = torch.tensor(X_ctl_valid, dtype=torch.float32).cuda()
+
+			y_valid = numpy.expand_dims(y_valid.transpose(0, 2, 1), 1)
+			y_valid_counts = y_valid.sum(axis=-2)
+
+		columns = "Epoch\tIteration\tTraining Time\tValidation Time\t"
+		columns += "T MNLL\tT Count log1pMSE\t"
+		columns += "V MNLL\tV Profile Pearson\tV Count Pearson\tV Count log1pMSE"
+		if verbose:
+			print(columns)
+
+		start = time.time()
+		iteration = 0
+		best_loss = float("inf")
+
+		for epoch in range(max_epochs):
+			tic = time.time()
+
+			for X, X_ctl, y in training_data:
+				X, X_ctl, y = X.cuda(), X_ctl.cuda(), y.cuda()
+
+				# Clear the optimizer and set the model to training mode
+				optimizer.zero_grad()
+				self.train()
+
+				# Run forward pass
+				y_profile, y_counts = self(X, X_ctl)
+
+				# Calculate the profile and count losses
+				profile_loss = MNLLLoss(y_profile, y)
+				count_loss = log1pMSELoss(y_counts, y.sum(dim=2))
+
+				# Extract the profile loss for logging
+				profile_loss_ = profile_loss.item()
+				count_loss_ = count_loss.item()
+
+				# Mix losses together and update the model
+				loss = profile_loss + self.alpha * count_loss
+				loss.backward()
+				optimizer.step()
+
+				# Report measures if desired
+				if verbose and iteration % validation_iter == 0:
+					train_time = time.time() - start
+
+					with torch.no_grad():
+						self.eval()
+
+						tic = time.time()
+						y_profile, y_counts = self.predict(X_valid, X_ctl_valid)
+						valid_time = time.time() - tic
+
+						y_profile = numpy.expand_dims(y_profile.transpose(0, 2, 1), 1)
+						y_counts = numpy.expand_dims(y_counts, 1)
+
+						measures = compute_performance_metrics(y_valid, y_profile, 
+							y_valid_counts, y_counts, 7, 81)
+
+						line = "{}\t{}\t{:4.4}\t{:4.4}\t".format(epoch, iteration,
+							train_time, valid_time)
+
+						line += "{:4.4}\t{:4.4}\t".format(profile_loss_, 
+							count_loss_)
+
+						line += "{:4.4}\t{:4.4}\t{:4.4}\t{:4.4}".format(
+							measures['nll'].mean(), 
+							measures['profile_pearson'].mean(),
+							measures['count_pearson'].mean(), 
+							measures['count_mse'].mean()
+						)
+
+						print(line)
+
+						start = time.time()
+
+						valid_loss = measures['nll'].mean() + self.alpha * measures['count_mse'].mean()
+						if valid_loss < best_loss:
+							best_loss = valid_loss
+
+							self = self.cpu()
+							torch.save(self, "bpnet.{}.{}.torch".format(self.n_filters, self.n_layers))
+							self = self.cuda()
+					
+				iteration += 1
