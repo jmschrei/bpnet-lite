@@ -1,5 +1,6 @@
 # bpnet-lite
-This repository hosts a minimal version of a Python API for BPNet.
+
+bpnet-lite is a lightweight version of BPNet that contains a reference implementation in PyTorch, efficient data loaders, and a command-line tool that accepts a JSON as input. This implementation is meant to be used for quickly exploring data sets using BPNet and as a springboard for prototyping new ideas that involve modifying the code. bpnet-lite does not include all of the features that have been developed for BPNet: see https://github.com/kundajelab/basepairmodels for that.
 
 ### Installation
 
@@ -7,58 +8,72 @@ You can install bpnet-lite with `pip install bpnet-lite`.
 
 ### Usage
 
-bpnet-lite has two main functions. The first is the `BPNet` function, which returns a TensorFlow / Keras model with the desired architectural parameters set. The second is the `io.extract_subset` function, which replaces the many command-line tools that needed to be used to preprocess the data. This function takes an entire FASTA file, entire bigWig files for signal, and a bedgraph file for coordinates (such as peaks) and extracts the subset for you.
+There are two main ways to use bpnet-lite. The first is through the Python API, where you interact with a BPNet object and the associated data loaders. Here is a complete example Python script that could be used: 
 
-See below an example of the current usage.
+```python
+import numpy
+import torch
 
-```Python
-# Extract training data
-training_chroms = ['chr{}'.format(i) for i in range(1, 23) if i not in (1, 8, 21, 22)]
-(X_sequences, X_control_positives, X_control_negatives, y_output_positives, 
-	y_output_negatives) = extract_subset("hg38.genome.fa", 
-	"control_neg_strand.bw", "control_pos_strand.bw", "neg_strand.bw", 
-	"pos_strand.bw", "peaks.bed", chroms=training_chroms)
+from bpnetlite import BPNet
+from bpnetlite.io import DataGenerator
+from bpnetlite.io import extract_peaks
 
-X_control_profiles = numpy.array([X_control_negatives, X_control_positives]).transpose([1, 2, 0])
-X_control_counts = numpy.log(X_control_profiles.sum(axis=1).sum(axis=1) + 1)
+n_filters = 64
+n_layers = 8
 
-y_control_profiles = numpy.array([y_output_negatives, y_output_positives]).transpose([1, 2, 0])
-y_control_counts = numpy.log(y_control_profiles.sum(axis=1) + 1)
+batch_size = 64
 
-X_train = {
-	'sequence': X_sequences, 
-	'control_logcount': X_control_counts, 
-	'control_profile': X_control_profiles, 
-}
+in_window = 2114
+out_window = 1000
+trimming = (2114 - 1000) // 2
+max_jitter = 128
 
-y_train = {
-	'task0_logcount': y_control_counts, 
-	'task0_profile': y_control_profiles
-}
+###
 
-# Extract validation data
-(X_sequences, X_control_positives, X_control_negatives, y_output_positives, 
-	y_output_negatives) = extract_subset("hg38.genome.fa", 
-	"control_neg_strand.bw", "control_pos_strand.bw", "neg_strand.bw", 
-	"pos_strand.bw", "peaks.bed", chroms=['chr22'])
+training_chroms = ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9',
+	'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 'chr18', 'chr19', 'chr20', 
+	'chr22']
 
-X_control_profiles = numpy.array([X_control_negatives, X_control_positives]).transpose([1, 2, 0])
-X_control_counts = numpy.log(X_control_profiles.sum(axis=1).sum(axis=1) + 1)
+valid_chroms = ['chr4', 'chr15', 'chr21']
 
-y_control_profiles = numpy.array([y_output_negatives, y_output_positives]).transpose([1, 2, 0])
-y_control_counts = numpy.log(y_control_profiles.sum(axis=1) + 1)
+###
 
-X_valid = {
-	'sequence': X_sequences, 
-	'control_logcount': X_control_counts, 
-	'control_profile': X_control_profiles, 
-}
+sequence_path = ... 
+peak_path = ...
+plus_bw_path = ...
+minus_bw_path = ...
+plus_ctl_bw_path = ...
+minus_ctl_bw_path = ...
 
-y_valid = {
-	'task0_logcount': y_control_counts, 
-	'task0_profile': y_control_profiles
-}
+train_sequences, train_signals, train_controls = extract_peaks(sequence_path, 
+	plus_bw_path, minus_bw_path, plus_ctl_bw_path, minus_ctl_bw_path, 
+	peak_path, training_chroms, verbose=True)
 
-model = BPNet()
-model.fit(X_train, y_train, epochs=200, validation_data=(X_valid, y_valid))
+valid_sequences, valid_signals, valid_controls = extract_peaks(sequence_path, 
+	plus_bw_path, minus_bw_path, plus_ctl_bw_path, minus_ctl_bw_path, 
+	peak_path, test_chroms, max_jitter=0, verbose=True)
+
+###
+
+training_peaks = DataGenerator(
+	sequences=train_sequences,
+	signals=train_signals,
+	controls=train_controls,
+	in_window=in_window,
+	out_window=out_window,
+	random_state=0)
+
+training_data = torch.utils.data.DataLoader(training_peaks, 
+	pin_memory=True, 
+	batch_size=batch_size)
+
+model = BPNet(n_filters=n_filters, n_layers=n_layers, trimming=trimming).cuda()
+
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001563)
+
+model.fit_generator(training_data, optimizer, X_valid=valid_sequences, 
+	X_ctl_valid=valid_controls, y_valid=valid_signals, max_epochs=250, 
+	validation_iter=100, batch_size=batch_size)
 ```
+
+The second is through the command-line API. The command is `BPNet` and it currently accepts all of its arguments through a JSON. See `example.json` in the repository for an example JSON with all the parameters that can be set. Once the JSON is set, you can run the command as `bpnet -p example.json`.
