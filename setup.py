@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='bpnet-lite',
-    version='0.0.2',
+    version='0.1.0',
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
     packages=['bpnetlite'],
@@ -13,7 +13,7 @@ setup(
     install_requires=[
         "numpy >= 1.14.2",
         "scipy >= 1.0.0",
-        "pandas >= 1.3.3"
+        "pandas >= 1.3.3",
         "pyBigWig >= 0.3.17",
         "torch >= 1.9.0",
     ],
