@@ -27,7 +27,12 @@ class BPNet(torch.nn.Module):
 	one-hot encoded sequence, runs it through: 
 
 	(1) a single wide convolution operation 
+
+	THEN 
+
 	(2) a user-defined number of dilated residual convolutions
+
+	THEN
 
 	(3a) profile predictions done using a very wide convolution layer 
 	that also takes in stranded control tracks 
@@ -67,6 +72,15 @@ class BPNet(torch.nn.Module):
 		The number of dilated residual layers to include in the model.
 		Default is 8.
 
+	n_profile_outputs: int, optional
+		The number of profile outputs from the model. Generally either 1 or 2 
+		depending on if the data is unstranded or stranded. Default is 2.
+
+	n_count_outputs: int, optional
+		The number of count outputs from the model. Generally just 1, but
+		can be larger than 1 when multiple experiments are being modeled
+		at the same time. Default is 1.
+
 	alpha: float, optional
 		The weight to put on the count loss.
 
@@ -76,10 +90,12 @@ class BPNet(torch.nn.Module):
 		number of positions removed is 2*trimming.
 	"""
 
-	def __init__(self, n_filters=64, n_layers=8, alpha=1, trimming=None):
+	def __init__(self, n_filters=64, n_layers=8, n_outputs=2, alpha=1, 
+		trimming=None):
 		super(BPNet, self).__init__()
 		self.n_filters = n_filters
 		self.n_layers = n_layers
+		self.n_outputs = n_outputs
 		self.alpha = alpha
 		self.trimming = trimming or 2 ** n_layers
 
@@ -90,11 +106,13 @@ class BPNet(torch.nn.Module):
 				dilation=2**i) for i in range(1, self.n_layers+1)
 		])
 
-		self.fconv = torch.nn.Conv1d(n_filters+2, 2, kernel_size=75, padding=37)
+		self.fconv = torch.nn.Conv1d(n_filters+2, n_outputs, kernel_size=75, 
+			padding=37)
+		
 		self.relu = torch.nn.ReLU()
 		self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
-		self.linear = torch.nn.Linear(n_filters+2, 2)
+		self.linear = torch.nn.Linear(n_filters+1, 1)
 
 	def forward(self, X, X_ctl):
 		start, end = self.trimming, X.shape[2] - self.trimming
@@ -108,21 +126,17 @@ class BPNet(torch.nn.Module):
 
 		X_ = torch.cat([X, X_ctl], dim=1)
 		y_profile = self.fconv(X_)
-		#y_profile = y_profile.reshape(X_.shape[0], -1)
+		y_profile = y_profile.reshape(X.shape[0], -1)
 		y_profile = self.logsoftmax(y_profile)
-		#y_profile = y_profile.reshape(X.shape[0], 2, -1)
+		y_profile = y_profile.reshape(X.shape[0], self.n_outputs, -1)
 
 		# counts prediction
-		X_ctl = torch.sum(X_ctl, axis=2)
+		X_ctl = torch.sum(X_ctl, axis=(1, 2)).reshape(-1, 1)
 
 		X = torch.mean(X, axis=2)
-		#X = torch.exp(self.linear1(X))
-		#X =	X + self.alpha * X_ctl
-
 		X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
-		y_counts = self.linear(X).squeeze()
 
-		#y_counts = torch.log(X+1).squeeze()
+		y_counts = self.linear(X).reshape(X.shape[0], 1)
 		return y_profile, y_counts
 
 	def predict(self, X, X_ctl, batch_size=64):
@@ -152,12 +166,14 @@ class BPNet(torch.nn.Module):
 			X_valid = torch.tensor(X_valid, dtype=torch.float32).cuda()
 			X_ctl_valid = torch.tensor(X_ctl_valid, dtype=torch.float32).cuda()
 
-			y_valid = numpy.expand_dims(y_valid.transpose(0, 2, 1), 1)
-			y_valid_counts = y_valid.sum(axis=-2)
+			y_valid = y_valid.reshape(y_valid.shape[0], -1)
+			y_valid = numpy.expand_dims(y_valid, (1, 3))
+			y_valid_counts = y_valid.sum(axis=2)
 
 		columns = "Epoch\tIteration\tTraining Time\tValidation Time\t"
 		columns += "T MNLL\tT Count log1pMSE\t"
 		columns += "V MNLL\tV Profile Pearson\tV Count Pearson\tV Count log1pMSE"
+		columns += "\tSaved?"
 		if verbose:
 			print(columns)
 
@@ -180,7 +196,7 @@ class BPNet(torch.nn.Module):
 
 				# Calculate the profile and count losses
 				profile_loss = MNLLLoss(y_profile, y)
-				count_loss = log1pMSELoss(y_counts, y.sum(dim=2))
+				count_loss = log1pMSELoss(y_counts, y.sum(dim=(1, 2)).reshape(-1, 1))
 
 				# Extract the profile loss for logging
 				profile_loss_ = profile_loss.item()
@@ -202,7 +218,8 @@ class BPNet(torch.nn.Module):
 						y_profile, y_counts = self.predict(X_valid, X_ctl_valid)
 						valid_time = time.time() - tic
 
-						y_profile = numpy.expand_dims(y_profile.transpose(0, 2, 1), 1)
+						y_profile = y_profile.reshape(y_profile.shape[0], -1)
+						y_profile = numpy.expand_dims(y_profile, (1, 3))
 						y_counts = numpy.expand_dims(y_counts, 1)
 
 						measures = compute_performance_metrics(y_valid, y_profile, 
@@ -221,11 +238,13 @@ class BPNet(torch.nn.Module):
 							measures['count_mse'].mean()
 						)
 
+						valid_loss = measures['nll'].mean() + self.alpha * measures['count_mse'].mean()
+						line += "\t{}".format(valid_loss < best_loss)
+
 						print(line)
 
 						start = time.time()
 
-						valid_loss = measures['nll'].mean() + self.alpha * measures['count_mse'].mean()
 						if valid_loss < best_loss:
 							best_loss = valid_loss
 
