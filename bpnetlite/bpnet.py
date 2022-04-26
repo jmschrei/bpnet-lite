@@ -275,10 +275,8 @@ class BPNet(torch.nn.Module):
 						valid_loss = measures['nll'].mean() + self.alpha * measures['count_mse'].mean()
 						line += "\t{}".format(valid_loss < best_loss)
 
-						#if valid_loss < best_loss:
-							#self = self.cpu()
-							#torch.save(self, "bpnet.{}.{}.torch".format(self.n_filters, self.n_layers))
-							#self = self.cuda()
+						if valid_loss < best_loss:
+							torch.save(self, "bpnet.{}.{}.torch".format(self.n_filters, self.n_layers))
 					
 						print(line)
 
