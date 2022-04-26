@@ -106,7 +106,8 @@ class BPNet(torch.nn.Module):
 		self.fconv = torch.nn.Conv1d(n_filters+n_control_tracks, n_outputs, kernel_size=75, 
 			padding=37)
 		
-		self.linear = torch.nn.Linear(n_filters+1, 1)
+		n_count_control = 1 if n_control_tracks > 0 else 0
+		self.linear = torch.nn.Linear(n_filters+n_count_control, 1)
 
 	def forward(self, X, X_ctl=None):
 		"""A forward pass of the model.
@@ -148,14 +149,12 @@ class BPNet(torch.nn.Module):
 		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
 
 		# counts prediction
-		if X_ctl is None:
-			X_ctl = torch.zeros(X.shape[0])
-		else:
-			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], axis=(1, 2))
-		
-		X_ctl = X_ctl.unsqueeze(-1)
 		X = torch.mean(X[:, :, start-37:end+37], axis=2)
-		X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
+
+		if X_ctl is not None:
+			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], axis=(1, 2))
+			X_ctl = X_ctl.unsqueeze(-1)
+			X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
 
 		y_counts = self.linear(X).reshape(X.shape[0], 1)
 		return y_profile, y_counts
@@ -199,7 +198,6 @@ class BPNet(torch.nn.Module):
 		if verbose:
 			print(columns)
 
-		start = time.time()
 		iteration = 0
 		best_loss = float("inf")
 
@@ -241,11 +239,12 @@ class BPNet(torch.nn.Module):
 
 				# Report measures if desired
 				if verbose and iteration % validation_iter == 0:
-					train_time = time.time() - start
+					train_time = time.time() - tic
 
 					with torch.no_grad():
 						self.eval()
 
+						tic = time.time()
 						y_profile, y_counts = self.predict(X_valid, X_ctl_valid)
 						valid_time = time.time() - tic
 
@@ -275,8 +274,6 @@ class BPNet(torch.nn.Module):
 
 						valid_loss = measures['nll'].mean() + self.alpha * measures['count_mse'].mean()
 						line += "\t{}".format(valid_loss < best_loss)
-
-						start = time.time()
 
 						#if valid_loss < best_loss:
 							#self = self.cpu()
