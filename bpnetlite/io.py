@@ -5,6 +5,8 @@
 import numpy
 import torch
 import pandas
+
+import pyfaidx
 import pyBigWig
 
 from tqdm import tqdm
@@ -75,79 +77,6 @@ def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8',
 
 	return ohe
 
-def read_fasta(filename, include_chroms=None, exclude_chroms=None, 
-	ignore='N', alphabet=['A', 'C', 'G', 'T', 'N'], verbose=True):
-	"""Read in a FASTA file and output a dictionary of sequences.
-
-	This function will take in the path to a FASTA-formatted file and output
-	a string containing the sequence for each chromosome. Optionally,
-	the user can specify a set of chromosomes to include or exclude from
-	the returned dictionary.
-
-	Parameters
-	----------
-	filename : str
-		The path to the FASTA-formatted file to open.
-
-	include_chroms : set or tuple or list, optional
-		The exact names of chromosomes in the FASTA file to include, excluding
-		all others. If None, include all chromosomes (except those specified by
-		exclude_chroms). Default is None.
-
-	exclude_chroms : set or tuple or list, optional
-		The exact names of chromosomes in the FASTA file to exclude, including
-		all others. If None, include all chromosomes (or the set specified by
-		include_chroms). Default is None.
-
-	ignore : str, optional
-		A character to indicate setting nothing to 1 for that row, keeping the
-		encoding entirely 0's for that row. In the context of genomics, this is
-		the N character. Default is 'N'.
-
-	alphabet : set or tuple or list, optional
-		A pre-defined alphabet. If None is passed in, the alphabet will be
-		determined from the sequence, but this may be time consuming for
-		large sequences. Must include the ignore character. Default is
-		['A', 'C', 'G', 'T', 'N'].
-
-	verbose : bool or str, optional
-		Whether to display a progress bar. If a string is passed in, use as the
-		name of the progressbar. Default is False.
-
-	Returns
-	-------
-	chroms : dict
-		A dictionary of one-hot encoded sequences where the keys are the names
-		of the chromosomes (exact strings from the header lines in the FASTA file)
-		and the values are the strings.
-	"""
-
-	sequences = {}
-	name, sequence = None, None
-	skip_chrom = False
-
-	with open(filename, "r") as infile:
-		for line in tqdm(infile, disable=not verbose, desc="Reading FASTA"):
-			if line.startswith(">"):
-				if name is not None and skip_chrom is False:
-					sequences[name] = ''.join(sequence)
-
-				sequence = []
-				name = line[1:].strip("\n")
-				if include_chroms is not None and name not in include_chroms:
-					skip_chrom = True
-				elif exclude_chroms is not None and name in exclude_chroms:
-					skip_chrom = True
-				else:
-					skip_chrom = False
-
-			else:
-				if skip_chrom == False:
-					sequence.append(line.rstrip("\n").upper())
-
-	return sequences
-
-
 class DataGenerator(torch.utils.data.Dataset):
 	"""A data generator for BPNet inputs.
 
@@ -173,9 +102,10 @@ class DataGenerator(torch.utils.data.Dataset):
 		output length `out_window`. See description above for connection 
 		with jitter.
 
-	controls: torch.tensor, shape=(n, t, out_window+2*max_jitter)
+	controls: torch.tensor, shape=(n, t, out_window+2*max_jitter) or None, optional
 		The control signal to take as input, usually counts, for `n`
-		examples with `t` strands and output length `out_window`. 
+		examples with `t` strands and output length `out_window`. If
+		None, does not return controls.
 
 	in_window: int, optional
 		The input window size. Default is 2114.
@@ -194,8 +124,9 @@ class DataGenerator(torch.utils.data.Dataset):
 		Whether to use a deterministic seed or not.
 	"""
 
-	def __init__(self, sequences, signals, controls, in_window, out_window, 
-		max_jitter=128, reverse_complement=True, random_state=None):
+	def __init__(self, sequences, signals, controls=None, in_window=2114, 
+		out_window=1000, max_jitter=128, reverse_complement=True, 
+		random_state=None):
 		self.in_window = in_window
 		self.out_window = out_window
 		self.max_jitter = max_jitter
@@ -215,57 +146,71 @@ class DataGenerator(torch.utils.data.Dataset):
 		j = self.random_state.randint(self.max_jitter*2)
 
 		X = self.sequences[i][:, j:j+self.in_window]
-		X_ctl = self.controls[i][:, j:j+self.out_window]
 		y = self.signals[i][:, j:j+self.out_window]
 
-		if self.reverse_complement and numpy.random.choice(2) == 1:
+		if self.controls is not None:
+			X_ctl = self.controls[i][:, j:j+self.in_window]
+
+		if self.reverse_complement and self.random_state.choice(2) == 1:
 			X = X[::-1][:, ::-1]
 			y = y[::-1][:, ::-1]
-			X_ctl = X_ctl[::-1][:, ::-1]
+
+			if self.controls is not None:
+				X_ctl = X_ctl[::-1][:, ::-1]
 
 		X = torch.tensor(X.copy(), dtype=torch.float32)
-		X_ctl = torch.tensor(X_ctl.copy(), dtype=torch.float32)
 		y = torch.tensor(y.copy())
-		return X, X_ctl, y
 
+		if self.controls is not None:
+			X_ctl = torch.tensor(X_ctl.copy(), dtype=torch.float32)
+			return X, X_ctl, y
 
-def extract_peaks(sequences, plus_bw_path, minus_bw_path, plus_ctl_bw_path, 
-	minus_ctl_bw_path, peak_path, chroms, in_window=2114, out_window=1000, 
-	max_jitter=128, verbose=False):
-	"""Extract data directly from fasta and bigWig files.
+		return X, y
 
-	This function will take in the file path to a fasta file and stranded
-	signal and control files as well as other parameters. It will then
-	extract the data to the specified window lengths with jitter added to
-	each side for efficient jitter extraction. If you don't want jitter,
-	set that to 0.
+def extract_peaks(peaks, sequences, signals, controls=None, chroms=None, 
+	in_window=2114, out_window=1000, max_jitter=128, verbose=False):
+	"""Extract sequences and signals at coordinates from a peak file.
+
+	This function will take in genome-wide sequences, signals, and optionally
+	controls, and extract the values of each at the coordinates specified in
+	the peak file and return them as tensors.
+
+	Signals and controls are both lists with the length of the list, n_s
+	and n_c respectively, being the middle dimension of the returned
+	tensors. Specifically, the returned tensors of size 
+	(len(peaks), n_s/n_c, (out_window/in_wndow)+max_jitter*2).
+
+	The values for sequences, signals, and controls, can either be filepaths
+	or dictionaries of numpy arrays or a mix of the two. When a filepath is 
+	passed in it is loaded using pyfaidx or pyBigWig respectively.   
 
 	Parameters
 	----------
-	sequence_path: str or dictionary
+	peaks: str or pandas.DataFrame
+		Either the path to a bed file or a pandas DataFrame object containing
+		three columns: the chromosome, the start, and the end, of each peak.
+
+	sequences: str or dictionary
 		Either the path to a fasta file to read from or a dictionary where the
 		keys are the unique set of chromosoms and the values are one-hot
 		encoded sequences as numpy arrays or memory maps.
 
-	plus_bw_path: str
-		Path to the bigWig containing the signal values on the positive strand.
+	signals: list of strs or list of dictionaries
+		A list of filepaths to bigwig files, where each filepath will be read
+		using pyBigWig, or a list of dictionaries where the keys are the same
+		set of unique chromosomes and the values are numpy arrays or memory
+		maps.
 
-	minus_bw_path: str
-		Path to the bigWig containing the signal values on the negative strand.
+	controls: list of strs or list of dictionaries or None, optional
+		A list of filepaths to bigwig files, where each filepath will be read
+		using pyBigWig, or a list of dictionaries where the keys are the same
+		set of unique chromosomes and the values are numpy arrays or memory
+		maps. If None, no control tensor is returned. Default is None. 
 
-	plus_ctl_bw_path: str
-		Path to the bigWig containing the control values on the positive strand.
-
-	minus_ctl_bw_path: str
-		Path to the bigWig containing the control values on the negative strand.
-
-	peak_path: str
-		Path to a peak bed file. The file can have more than three columns as
-		long as the first three columns are (chrom, start, end).
-
-	chroms: list
+	chroms: list or None, optional
 		A set of chromosomes to extact peaks from. Peaks in other chromosomes
-		are ignored.
+		in the peak file are ignored. If None, all peaks are used. Default is
+		None.
 
 	in_window: int, optional
 		The input window size. Default is 2114.
@@ -283,34 +228,49 @@ def extract_peaks(sequences, plus_bw_path, minus_bw_path, plus_ctl_bw_path,
 	Returns
 	-------
 	seqs: numpy.ndarray, shape=(n, 4, in_window+2*max_jitter)
-		The extracted sequences in the same order as the chrom and mid arrays.
+		The extracted sequences in the same order as the peaks in the peak
+		file after optional filtering by chromosome.
 
-	signals: numpy.ndarray, shape=(n, 2, out_window+2*max_jitter)
-		The extracted stranded signals in the same order as the chrom and mid
-		arrays.
+	signals: numpy.ndarray, shape=(n, len(signals), out_window+2*max_jitter)
+		The extracted signals where the first dimension is in the same order
+		as peaks in the peak file after optional filtering by chromosome and
+		the second dimension is in the same order as the list of signal files.
 
-	controls: numpy.ndarray, shape=(n, 2, out_window+2*max_jitter)
-		The extracted stranded signals in the same order as the chrom and mid
-		arrays.
+	controls: numpy.ndarray, shape=(n, len(controls), out_window+2*max_jitter)
+		The extracted controls where the first dimension is in the same order
+		as peaks in the peak file after optional filtering by chromosome and
+		the second dimension is in the same order as the list of control files.
+		If no control files are given, this is not returned.
 	"""
 
-	seqs, signals, controls = [], [], []
+	seqs, signals_, controls_ = [], [], []
 	in_width, out_width = in_window // 2, out_window // 2
 
+	# Load the sequences
 	if isinstance(sequences, str):
-		sequences = read_fasta(sequences, include_chroms=chroms, 
-			verbose=verbose)
+		sequences = pyfaidx.Fasta(sequences)
 
+	# Load the peaks or rename the columns to be consistent
 	names = ['chrom', 'start', 'end']
-	peaks = pandas.read_csv(peak_path, sep="\t", usecols=(0, 1, 2), 
-		header=None, index_col=False, names=names)
-	peaks = peaks[numpy.isin(peaks['chrom'], chroms)]
+	if isinstance(peaks, str):
+		peaks = pandas.read_csv(peaks, sep="\t", usecols=(0, 1, 2), 
+			header=None, index_col=False, names=names)
+	else:
+		peaks = peaks.copy()
+		peaks.columns = names
 
-	plus_bw = pyBigWig.open(plus_bw_path, "r")
-	minus_bw = pyBigWig.open(minus_bw_path, "r")
+	if chroms is not None:
+		peaks = peaks[numpy.isin(peaks['chrom'], chroms)]
 
-	plus_ctl_bw = pyBigWig.open(plus_ctl_bw_path, "r")
-	minus_ctl_bw = pyBigWig.open(minus_ctl_bw_path, "r")
+	# Load the signal and optional control tracks if filenames are given
+	for i, signal in enumerate(signals):
+		if isinstance(signal, str):
+			signals[i] = pyBigWig.open(signal, "r")
+
+	if controls is not None:
+		for i, control in enumerate(controls):
+			if isinstance(control, str):
+				controls[i] = pyBigWig.open(control, "r")
 
 	desc = "Loading Peaks"
 	d = not verbose
@@ -319,45 +279,140 @@ def extract_peaks(sequences, plus_bw_path, minus_bw_path, plus_ctl_bw_path,
 		start = mid - out_width - max_jitter
 		end = mid + out_width + max_jitter
 
-		sequence = sequences[chrom]
+		# Extract the signal from each of the signal files
+		signals_.append([])
+		for signal in signals:
+			if isinstance(signal, dict):
+				signal_ = signal[chrom][start:end]
+			else:
+				signal_ = signal.values(chrom, start, end, numpy=True)
+				signal_ = numpy.nan_to_num(signal_)
 
-		# Load plus strand signal
-		plus_sig = plus_bw.values(chrom, start, end, numpy=True)
-		plus_sig = numpy.nan_to_num(plus_sig)
+			signals_[-1].append(signal_)
 
-		# Load minus strand signal
-		minus_sig = minus_bw.values(chrom, start, end, numpy=True)
-		minus_sig = numpy.nan_to_num(minus_sig)
+		# For the sequences and controls extract a window the size of the input
+		start = mid - in_width - max_jitter
+		end = mid + in_width + max_jitter
 
-		# Load plus strand control
-		plus_ctl = plus_ctl_bw.values(chrom, start, end, numpy=True)
-		plus_ctl = numpy.nan_to_num(plus_ctl)
+		# Extract the controls from each of the control files
+		if controls is not None:
+			controls_.append([])
+			for control in controls:
+				if isinstance(control, dict):
+					control_ = control[chrom][start:end]
+				else:
+					control_ = control.values(chrom, start, end, numpy=True)
+					control_ = numpy.nan_to_num(control_)
 
-		# Load minus strand control
-		minus_ctl = minus_ctl_bw.values(chrom, start, end, numpy=True)
-		minus_ctl = numpy.nan_to_num(minus_ctl)
+				controls_[-1].append(control_)
 
-		# Append signal to growing signal list
-		sig = numpy.array([plus_sig, minus_sig])
-		signals.append(sig)
-
-		# Append control to growing control list
-		ctl = numpy.array([plus_ctl, minus_ctl])
-		controls.append(ctl)
-
-		# Append sequence to growing sequence list
-		s = mid - in_width - max_jitter
-		e = mid + in_width + max_jitter
-
-		if isinstance(sequence, str):
-			seq = one_hot_encode(sequence[s:e], alphabet=['A', 'C', 'G', 'T', 
-				'N']).T
+		# Extract the sequence
+		if isinstance(sequences, dict):
+			seq = sequences[chrom][start:end].T
 		else:
-			seq = sequence[s:e].T
+			seq = one_hot_encode(sequences[chrom][start:end].seq.upper(), 
+				alphabet=['A', 'C', 'G', 'T', 'N']).T
 		
 		seqs.append(seq)
 
-	signals = numpy.array(signals)
-	controls = numpy.array(controls)
 	seqs = numpy.array(seqs)
-	return seqs, signals, controls
+	signals_ = numpy.array(signals_)
+
+	if controls is not None:
+		controls_ = numpy.array(controls_)
+		return seqs, signals_, controls_
+
+	return seqs, signals_
+
+def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None, 
+	in_window=2114, out_window=1000, max_jitter=128, reverse_complement=True, 
+	random_state=None, pin_memory=True, num_workers=0, batch_size=32, 
+	verbose=False):
+	"""This is a constructor function that handles all IO.
+
+	This function will extract signal from all signal and control files,
+	pass that into a DataGenerator, and wrap that using a PyTorch data
+	loader. This is the only function that needs to be used.
+
+	Parameters
+	----------
+	peaks: str or pandas.DataFrame
+		Either the path to a bed file or a pandas DataFrame object containing
+		three columns: the chromosome, the start, and the end, of each peak.
+
+	sequences: str or dictionary
+		Either the path to a fasta file to read from or a dictionary where the
+		keys are the unique set of chromosoms and the values are one-hot
+		encoded sequences as numpy arrays or memory maps.
+
+	signals: list of strs or list of dictionaries
+		A list of filepaths to bigwig files, where each filepath will be read
+		using pyBigWig, or a list of dictionaries where the keys are the same
+		set of unique chromosomes and the values are numpy arrays or memory
+		maps.
+
+	controls: list of strs or list of dictionaries or None, optional
+		A list of filepaths to bigwig files, where each filepath will be read
+		using pyBigWig, or a list of dictionaries where the keys are the same
+		set of unique chromosomes and the values are numpy arrays or memory
+		maps. If None, no control tensor is returned. Default is None. 
+
+	chroms: list or None, optional
+		A set of chromosomes to extact peaks from. Peaks in other chromosomes
+		in the peak file are ignored. If None, all peaks are used. Default is
+		None.
+
+	in_window: int, optional
+		The input window size. Default is 2114.
+
+	out_window: int, optional
+		The output window size. Default is 1000.
+
+	max_jitter: int, optional
+		The maximum amount of jitter to add, in either direction, to the
+		midpoints that are passed in. Default is 128.
+
+	reverse_complement: bool, optional
+		Whether to reverse complement-augment half of the data. Default is True.
+
+	random_state: int or None, optional
+		Whether to use a deterministic seed or not.
+
+	pin_memory: bool, optional
+		Whether to pin page memory to make data loading onto a GPU easier.
+		Default is True.
+
+	num_workers: int, optional
+		The number of processes fetching data at a time to feed into a model.
+		If 0, data is fetched from the main process. Default is 0.
+
+	batch_size: int, optional
+		The number of data elements per batch. Default is 32.
+	
+	verbose: bool, optional
+		Whether to display a progress bar while loading. Default is False.
+
+	Returns
+	-------
+	X: torch.utils.data.DataLoader
+		A PyTorch DataLoader wrapped DataGenerator object.
+	"""
+
+	X = extract_peaks(peaks=peaks, sequences=sequences, signals=signals, 
+		controls=controls, chroms=chroms, in_window=in_window, 
+		out_window=out_window, max_jitter=max_jitter, verbose=verbose)
+
+	if controls is not None:
+		sequences, signals_, controls_ = X
+	else:
+		sequences, signals_ = X
+		controls_ = None
+
+	X_gen = DataGenerator(sequences, signals_, controls=controls_, 
+		in_window=in_window, out_window=out_window, max_jitter=max_jitter,
+		reverse_complement=reverse_complement, random_state=random_state)
+
+	X_gen = torch.utils.data.DataLoader(X_gen, pin_memory=pin_memory,
+		num_workers=num_workers, batch_size=batch_size) 
+
+	return X_gen
