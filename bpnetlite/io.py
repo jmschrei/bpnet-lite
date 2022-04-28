@@ -115,17 +115,17 @@ class DataGenerator(torch.utils.data.Dataset):
 
 	max_jitter: int, optional
 		The maximum amount of jitter to add, in either direction, to the
-		midpoints that are passed in. Default is 128.
+		midpoints that are passed in. Default is 0.
 
 	reverse_complement: bool, optional
-		Whether to reverse complement-augment half of the data. Default is True.
+		Whether to reverse complement-augment half of the data. Default is False.
 
 	random_state: int or None, optional
 		Whether to use a deterministic seed or not.
 	"""
 
 	def __init__(self, sequences, signals, controls=None, in_window=2114, 
-		out_window=1000, max_jitter=128, reverse_complement=True, 
+		out_window=1000, max_jitter=0, reverse_complement=False, 
 		random_state=None):
 		self.in_window = in_window
 		self.out_window = out_window
@@ -143,7 +143,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 	def __getitem__(self, idx):
 		i = self.random_state.choice(len(self.sequences))
-		j = self.random_state.randint(self.max_jitter*2)
+		j = 0 if self.max_jitter == 0 else self.random_state.randint(self.max_jitter*2) 
 
 		X = self.sequences[i][:, j:j+self.in_window]
 		y = self.signals[i][:, j:j+self.out_window]
@@ -152,17 +152,17 @@ class DataGenerator(torch.utils.data.Dataset):
 			X_ctl = self.controls[i][:, j:j+self.in_window]
 
 		if self.reverse_complement and self.random_state.choice(2) == 1:
-			X = X[::-1][:, ::-1]
-			y = y[::-1][:, ::-1]
+			X = torch.flip(X, [0, 1])
+			y = torch.flip(y, [0, 1])
 
 			if self.controls is not None:
-				X_ctl = X_ctl[::-1][:, ::-1]
+				X_ctl = torch.flip(X_ctl, [0, 1])
 
-		X = torch.tensor(X.copy(), dtype=torch.float32)
-		y = torch.tensor(y.copy())
+		#X = torch.tensor(X.copy(), dtype=torch.float32)
+		#y = torch.tensor(y.copy())
 
 		if self.controls is not None:
-			X_ctl = torch.tensor(X_ctl.copy(), dtype=torch.float32)
+			#X_ctl = torch.tensor(X_ctl.copy(), dtype=torch.float32)
 			return X, X_ctl, y
 
 		return X, y
@@ -227,16 +227,16 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 
 	Returns
 	-------
-	seqs: numpy.ndarray, shape=(n, 4, in_window+2*max_jitter)
+	seqs: torch.tensor, shape=(n, 4, in_window+2*max_jitter)
 		The extracted sequences in the same order as the peaks in the peak
 		file after optional filtering by chromosome.
 
-	signals: numpy.ndarray, shape=(n, len(signals), out_window+2*max_jitter)
+	signals: torch.tensor, shape=(n, len(signals), out_window+2*max_jitter)
 		The extracted signals where the first dimension is in the same order
 		as peaks in the peak file after optional filtering by chromosome and
 		the second dimension is in the same order as the list of signal files.
 
-	controls: numpy.ndarray, shape=(n, len(controls), out_window+2*max_jitter)
+	controls: torch.tensor, shape=(n, len(controls), out_window+2*max_jitter)
 		The extracted controls where the first dimension is in the same order
 		as peaks in the peak file after optional filtering by chromosome and
 		the second dimension is in the same order as the list of control files.
@@ -315,11 +315,11 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		
 		seqs.append(seq)
 
-	seqs = numpy.array(seqs)
-	signals_ = numpy.array(signals_)
+	seqs = torch.tensor(numpy.array(seqs), dtype=torch.float32)
+	signals_ = torch.tensor(numpy.array(signals_), dtype=torch.float32)
 
 	if controls is not None:
-		controls_ = numpy.array(controls_)
+		controls_ = torch.tensor(numpy.array(controls_), dtype=torch.float32)
 		return seqs, signals_, controls_
 
 	return seqs, signals_

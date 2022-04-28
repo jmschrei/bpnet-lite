@@ -79,6 +79,9 @@ class BPNet(torch.nn.Module):
 	alpha: float, optional
 		The weight to put on the count loss.
 
+	name: str or None, optional
+		The name to save the model to during training.
+
 	trimming: int or None, optional
 		The amount to trim from both sides of the input window to get the
 		output window. This value is removed from both sides, so the total
@@ -86,7 +89,7 @@ class BPNet(torch.nn.Module):
 	"""
 
 	def __init__(self, n_filters=64, n_layers=8, n_outputs=2, alpha=1, 
-		n_control_tracks=2, trimming=None):
+		n_control_tracks=2, name=None, trimming=None):
 		super(BPNet, self).__init__()
 		self.n_filters = n_filters
 		self.n_layers = n_layers
@@ -183,8 +186,8 @@ class BPNet(torch.nn.Module):
 		validation_iter=100, verbose=True):
 
 		if X_valid is not None:
-			X_valid = torch.tensor(X_valid, dtype=torch.float32).cuda()
-			y_valid = y_valid.reshape(y_valid.shape[0], -1)
+			X_valid = X_valid.cuda()
+			y_valid = y_valid.reshape(y_valid.shape[0], -1).numpy()
 			y_valid = numpy.expand_dims(y_valid, (1, 3))
 			y_valid_counts = y_valid.sum(axis=2)
 
@@ -277,6 +280,7 @@ class BPNet(torch.nn.Module):
 
 						if valid_loss < best_loss:
 							torch.save(self, "bpnet.{}.{}.torch".format(self.n_filters, self.n_layers))
+							best_loss = valid_loss
 					
 						print(line)
 
