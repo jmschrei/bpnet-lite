@@ -15,8 +15,7 @@ from .losses import MNLLLoss
 from .losses import log1pMSELoss
 
 from .performance import pearson_corr
-from .performance import multinomial_log_probs
-from .performance import compute_performance_metrics
+from .performance import calculate_performance_measures
 
 torch.backends.cudnn.benchmark = True
 
@@ -97,6 +96,7 @@ class BPNet(torch.nn.Module):
 		self.n_control_tracks = n_control_tracks
 
 		self.alpha = alpha
+		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
 		self.trimming = trimming or 2 ** n_layers
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
@@ -169,10 +169,12 @@ class BPNet(torch.nn.Module):
 
 			y_profiles, y_counts = [], []
 			for start, end in zip(starts, ends):
-				X_batch = X[start:end]
-				X_ctl_batch = None if X_ctl is None else X_ctl[start:end]
+				X_batch = X[start:end].cuda()
+				X_ctl_batch = None if X_ctl is None else X_ctl[start:end].cuda()
 
 				y_profiles_, y_counts_ = self(X_batch, X_ctl_batch)
+				y_profiles_ = y_profiles_.cpu()
+				y_counts_ = y_counts_.cpu()
 				
 				y_profiles.append(y_profiles_)
 				y_counts.append(y_counts_)
@@ -187,12 +189,10 @@ class BPNet(torch.nn.Module):
 
 		if X_valid is not None:
 			X_valid = X_valid.cuda()
-			y_valid = y_valid.reshape(y_valid.shape[0], -1).numpy()
-			y_valid = numpy.expand_dims(y_valid, (1, 3))
 			y_valid_counts = y_valid.sum(axis=2)
 
 		if X_ctl_valid is not None:
-			X_ctl_valid = torch.tensor(X_ctl_valid, dtype=torch.float32).cuda()
+			X_ctl_valid = X_ctl_valid.cuda()
 
 		columns = "Epoch\tIteration\tTraining Time\tValidation Time\t"
 		columns += "T MNLL\tT Count log1pMSE\t"
@@ -228,8 +228,8 @@ class BPNet(torch.nn.Module):
 				y = y.reshape(y.shape[0], -1)
 
 				# Calculate the profile and count losses
-				profile_loss = MNLLLoss(y_profile, y)
-				count_loss = log1pMSELoss(y_counts, y.sum(dim=-1).reshape(-1, 1))
+				profile_loss = MNLLLoss(y_profile, y).mean()
+				count_loss = log1pMSELoss(y_counts, y.sum(dim=-1).reshape(-1, 1)).mean()
 
 				# Extract the profile loss for logging
 				profile_loss_ = profile_loss.item()
@@ -251,16 +251,15 @@ class BPNet(torch.nn.Module):
 						y_profile, y_counts = self.predict(X_valid, X_ctl_valid)
 						valid_time = time.time() - tic
 
-						y_profile = torch.nn.functional.log_softmax(y_profile, dim=-1)
+						z = y_profile.shape
 						y_profile = y_profile.reshape(y_profile.shape[0], -1)
-						y_profile = y_profile.cpu().numpy()
-						y_profile = numpy.expand_dims(y_profile, (1, 3))
+						y_profile = torch.nn.functional.log_softmax(y_profile, dim=-1)
+						y_profile = y_profile.reshape(*z)
 
-						y_counts = y_counts.cpu().numpy()
-						y_counts = numpy.expand_dims(y_counts, 1)
-
-						measures = compute_performance_metrics(y_valid, y_profile, 
-							y_valid_counts, y_counts, 7, 81)
+						measures = calculate_performance_measures(y_profile, 
+							y_valid, y_counts, kernel_sigma=7, 
+							kernel_width=81, measures=['profile_mnll', 
+							'profile_pearson', 'count_pearson', 'count_mse'])
 
 						line = "{}\t{}\t{:4.4}\t{:4.4}\t".format(epoch, iteration,
 							train_time, valid_time)
@@ -269,19 +268,21 @@ class BPNet(torch.nn.Module):
 							count_loss_)
 
 						line += "{:4.4}\t{:4.4}\t{:4.4}\t{:4.4}".format(
-							measures['nll'].mean(), 
-							measures['profile_pearson'].mean(),
-							measures['count_pearson'].mean(), 
+							measures['profile_mnll'].mean(), 
+							numpy.nan_to_num(measures['profile_pearson']).mean(),
+							numpy.nan_to_num(measures['count_pearson']).mean(), 
 							measures['count_mse'].mean()
 						)
 
-						valid_loss = measures['nll'].mean() + self.alpha * measures['count_mse'].mean()
+						valid_loss = measures['profile_mnll'].mean() + self.alpha * measures['count_mse'].mean()
 						line += "\t{}".format(valid_loss < best_loss)
 
 						if valid_loss < best_loss:
-							torch.save(self, "bpnet.{}.{}.torch".format(self.n_filters, self.n_layers))
+							torch.save(self, "{}.torch".format(self.name))
 							best_loss = valid_loss
 					
 						print(line)
 
 				iteration += 1
+
+		torch.save(self, "{}.final.torch".format(self.name))

@@ -158,17 +158,14 @@ class DataGenerator(torch.utils.data.Dataset):
 			if self.controls is not None:
 				X_ctl = torch.flip(X_ctl, [0, 1])
 
-		#X = torch.tensor(X.copy(), dtype=torch.float32)
-		#y = torch.tensor(y.copy())
-
 		if self.controls is not None:
-			#X_ctl = torch.tensor(X_ctl.copy(), dtype=torch.float32)
 			return X, X_ctl, y
 
 		return X, y
 
 def extract_peaks(peaks, sequences, signals, controls=None, chroms=None, 
-	in_window=2114, out_window=1000, max_jitter=128, verbose=False):
+	in_window=2114, out_window=1000, max_jitter=128, min_counts=None,
+	max_counts=None, verbose=False):
 	"""Extract sequences and signals at coordinates from a peak file.
 
 	This function will take in genome-wide sequences, signals, and optionally
@@ -222,6 +219,16 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		The maximum amount of jitter to add, in either direction, to the
 		midpoints that are passed in. Default is 128.
 
+	min_counts: float or None, optional
+		The minimum number of counts, summed across the length of each example
+		and across all tasks, needed to be kept. If None, no minimum. Default 
+		is None.
+
+	max_counts: float or None, optional
+		The maximum number of counts, summed across the length of each example
+		and across all tasks, needed to be kept. If None, no maximum. Default 
+		is None.  
+
 	verbose: bool, optional
 		Whether to display a progress bar while loading. Default is False.
 
@@ -274,7 +281,7 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 
 	desc = "Loading Peaks"
 	d = not verbose
-	for _, (chrom, start, end) in tqdm(peaks.iterrows(), disable=d, desc=desc):
+	for chrom, start, end in tqdm(peaks.values, disable=d, desc=desc):
 		mid = start + (end - start) // 2
 		start = mid - out_width - max_jitter
 		end = mid + out_width + max_jitter
@@ -318,16 +325,22 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 	seqs = torch.tensor(numpy.array(seqs), dtype=torch.float32)
 	signals_ = torch.tensor(numpy.array(signals_), dtype=torch.float32)
 
+	idxs = torch.ones(signals_.shape[0], dtype=torch.bool)
+	if max_counts is not None:
+		idxs = (idxs) & (signals_.sum(dim=(1, 2)) < max_counts)
+	if min_counts is not None:
+		idxs = (idxs) & (signals_.sum(dim=(1, 2)) > min_counts)
+
 	if controls is not None:
 		controls_ = torch.tensor(numpy.array(controls_), dtype=torch.float32)
-		return seqs, signals_, controls_
+		return seqs[idxs], signals_[idxs], controls_[idxs]
 
-	return seqs, signals_
+	return seqs[idxs], signals_[idxs]
 
 def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None, 
 	in_window=2114, out_window=1000, max_jitter=128, reverse_complement=True, 
-	random_state=None, pin_memory=True, num_workers=0, batch_size=32, 
-	verbose=False):
+	min_counts=None, max_counts=None, random_state=None, pin_memory=True, 
+	num_workers=0, batch_size=32, verbose=False):
 	"""This is a constructor function that handles all IO.
 
 	This function will extract signal from all signal and control files,
@@ -375,6 +388,16 @@ def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None,
 	reverse_complement: bool, optional
 		Whether to reverse complement-augment half of the data. Default is True.
 
+	min_counts: float or None, optional
+		The minimum number of counts, summed across the length of each example
+		and across all tasks, needed to be kept. If None, no minimum. Default 
+		is None.
+
+	max_counts: float or None, optional
+		The maximum number of counts, summed across the length of each example
+		and across all tasks, needed to be kept. If None, no maximum. Default 
+		is None.  
+
 	random_state: int or None, optional
 		Whether to use a deterministic seed or not.
 
@@ -400,7 +423,8 @@ def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None,
 
 	X = extract_peaks(peaks=peaks, sequences=sequences, signals=signals, 
 		controls=controls, chroms=chroms, in_window=in_window, 
-		out_window=out_window, max_jitter=max_jitter, verbose=verbose)
+		out_window=out_window, max_jitter=max_jitter, min_counts=min_counts,
+		max_counts=max_counts, verbose=verbose)
 
 	if controls is not None:
 		sequences, signals_, controls_ = X

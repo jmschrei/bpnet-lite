@@ -5,131 +5,130 @@
 """
 This module contains performance measures that are used to evaluate the
 model but are not explicitly used as losses for optimization.
+
+IMPORTANT: MANY OF THESE FUNCTIONS ASSUME THE INPUTS TO BE PREDICTED LOG
+PROBABILITIES AND TRUE COUNTS. THE FIRST ARGUMENT MUST BE IN LOG SPACE
+AND THE SECOND ARGUMENT MUST BE IN COUNT SPACE FOR THESE FUNCTIONS.
 """
 
-import numpy as np
-import scipy.special
-import scipy.ndimage
+import torch
 
-def multinomial_log_probs(
-    category_log_probs, trials, query_counts, return_cross_entropy=True
-):
+from .losses import MNLLLoss
+from .losses import log1pMSELoss
+
+
+def smooth_gaussian1d(x, kernel_sigma, kernel_width):
+    """Smooth a signal along the sequence length axis.
+
+    This function is a replacement for the scipy.ndimage.gaussian1d
+    function that works on PyTorch tensors. It applies a Gaussian kernel
+    to each position which is equivalent to applying a convolution across
+    the sequence with weights equal to that of a Gaussian distribution.
+    Each sequence, and each channel within the sequence, is smoothed
+    independently.
+
+    Parameters
+    ----------
+    x: torch.tensor, shape=(n_sequences, n_channels, seq_len)
+        A tensor to smooth along the last axis. n_channels must be at
+        least 1.
+
+    kernel_sigma: float
+        The standard deviation of the Gaussian to be applied.
+
+    kernel_width: int
+        The width of the kernel to be applied.
+
+    Returns
+    -------
+    x_smooth: torch.tensor, shape=(n_sequences, n_channels, seq_len)
+        The smoothed tensor.
     """
-    Defines multinomial distributions and computes the probability of seeing
-    the queried counts under these distributions. This defines D different
-    distributions (that all have the same number of classes), and returns D
-    probabilities corresponding to each distribution.
 
-    Arguments:
-        `category_log_probs`: a D x N array containing log probabilities (base
-            e) of seeing each of the N classes/categories
-        `trials`: a D-array containing the total number of trials for each
-            distribution (can be different numbers)
-        `query_counts`: a D x N array containing the observed count of each
-            category in each distribution; the probability is computed for these
-            observations
-        `return_cross_entropy`: if True, also return a D-array of the cross
-            entropy
-    
-    Returns a D-array containing the log probabilities (base e) of each observed
-    query with its corresponding distribution. Note that D can be replaced with
-    any shape (i.e. only the last dimension is reduced).
+    meshgrid = torch.arange(kernel_width, dtype=torch.float32,
+        device=x.device)
+
+    mean = (kernel_width - 1.) / 2.
+    kernel = torch.exp(-0.5 * ((meshgrid - mean) / kernel_sigma) ** 2.0)
+    kernel = kernel / torch.sum(kernel)
+    kernel = kernel.reshape(1, 1, kernel_width).repeat(x.shape[1], 1, 1)
+    return torch.nn.functional.conv1d(x, weight=kernel, groups=x.shape[1], 
+        padding='same')
+
+def batched_smoothed_function(logps, true_counts, f, smooth_predictions=False, 
+    smooth_true=False, kernel_sigma=7, kernel_width=81, 
+    exponentiate_logps=False, batch_size=200):
+    """Batch a calculation with optional smoothing.
+
+    Given a set of predicted and true values, apply some function to them in
+    a batched manner and store the results. Optionally, either the true values
+    or the predicted ones can be smoothed.
+
+    Parameters
+    ----------
+    logps: torch.tensor
+        A tensor of the predicted log probability values.
+
+    true_counts: torch.tensor
+        A tensor of the true values, usually integer counts.
+
+    f: function
+        A function to be applied to the predicted and true values.
+
+    smooth_predictions: bool, optional
+        Whether to apply a Gaussian filter to the predictions. Default is 
+        False.
+
+    smooth_true: bool, optional
+        Whether to apply a Gaussian filter to the true values. Default is
+        False.
+
+    kernel_sigma: float, optional
+        The standard deviation of the Gaussian to be applied. Default is 7.
+
+    kernel_width: int, optional
+        The width of the kernel to be applied. Default is 81.
+
+    exponentiate_logps: bool, optional
+        Whether to exponentiate each batch of log probabilities. Default is
+        False.
+
+    batch_size: int, optional
+        The number of examples in each batch to evaluate at a time. Default
+        is 200.
+
+
+    Returns
+    -------
+    results: torch.tensor
+        The results of applying the function to the tensor.
     """
-    # Multinomial probability = n! / (x1!...xk!) * p1^x1 * ... pk^xk
-    # Log prob = log(n!) - (log(x1!) ... + log(xk!)) + x1log(p1) ... + xklog(pk)
-    log_n_fact = scipy.special.gammaln(trials + 1)
-    log_counts_fact = scipy.special.gammaln(query_counts + 1)
-    log_counts_fact_sum = np.sum(log_counts_fact, axis=-1)
-    log_prob_pows = category_log_probs * query_counts  # Elementwise
-    log_prob_pows_sum = np.sum(log_prob_pows, axis=-1)
 
-    log_prob = log_n_fact - log_counts_fact_sum + log_prob_pows_sum
-    if return_cross_entropy:
-        cross_ent = (-log_prob_pows_sum) / trials
-        return log_prob, cross_ent
-    else:
-        return log_prob
+    n = logps.shape[0]
+    results = torch.empty(*logps.shape[:2])
 
-
-def profile_multinomial_nll(
-    true_profs, log_pred_profs, true_counts, prof_smooth_kernel_sigma,
-    prof_smooth_kernel_width, smooth_pred_profs=False,
-    return_cross_entropy=True, batch_size=200
-):
-    """
-    Computes the negative log likelihood of seeing the true profile, given the
-    probabilities specified by the predicted profile. The NLL is computed
-    separately for each sample, task, and strand, but the results are averaged
-    across the strands.
-
-    Arguments:
-        `true_profs`: N x T x O x 2 array, where N is the number of
-            examples, T is the number of tasks, and O is the output profile
-            length; contains the true profiles for each for each task and
-            strand, as RAW counts
-        `log_pred_profs`: a N x T x O x 2 array, containing the predicted
-            profiles for each task and strand, as LOG probabilities
-        `true_counts`: a N x T x 2 array, containing the true total counts
-            for each task and strand
-        `smooth_pred_profs`: whether or not to smooth the predicted profiles
-            before computing NLL
-        `return_cross_entropy`: if True, also return an N x T array of the
-            cross entropy
-        `batch_size`: performs computation in a batch size of this many samples
-    
-    Returns an N x T array, containing the strand-pooled multinomial NLL for
-    each sample and task.
-    """
-    num_samples = true_profs.shape[0]
-    num_tasks = true_profs.shape[1]
-    nlls = np.empty((num_samples, num_tasks))
-    if return_cross_entropy:
-        ces = np.empty((num_samples, num_tasks))
-
-    for start in range(0, num_samples, batch_size):
+    for start in range(0, n, batch_size):
         end = start + batch_size
-        true_profs_batch = true_profs[start:end]
-        log_pred_profs_batch = log_pred_profs[start:end]
-        true_counts_batch = true_counts[start:end]
 
-        # Swap axes on profiles to make them B x T x 2 x O
-        true_profs_batch = np.swapaxes(true_profs_batch, 2, 3)
-        log_pred_profs_batch = np.swapaxes(log_pred_profs_batch, 2, 3)
+        logps_ = logps[start:end]
+        true_counts_ = true_counts[start:end]
 
-        # Smooth the predicted profile in probability space (by default this
-        # doesn't happen)
-        if prof_smooth_kernel_width == 0:
-            sigma, truncate = 1, 0
+        if smooth_predictions:
+            logps_ = torch.exp(logps_)
+            logps_ = smooth_gaussian1d(logps_, kernel_sigma, kernel_width)
+
+            if exponentiate_logps == False:
+                logps_ = torch.log(logps_)
         else:
-            sigma = prof_smooth_kernel_sigma
-            truncate = (prof_smooth_kernel_width - 1) / (2 * sigma)
-        if smooth_pred_profs:
-            # Transform to probability space
-            pred_profs_batch = np.exp(log_pred_profs_batch)
-            # Smooth
-            pred_profs_batch_smooth = scipy.ndimage.gaussian_filter1d(
-                pred_profs_batch, sigma, axis=-1, truncate=truncate
-            )
-            # Transform back to log-probability space
-            log_pred_profs_batch = np.log(pred_profs_batch_smooth)
+            if exponentiate_logps:
+                logps_ = torch.exp(logps_)
 
-        result_batch = multinomial_log_probs(
-            log_pred_profs_batch, true_counts_batch, true_profs_batch,
-            return_cross_entropy
-        )
-        if return_cross_entropy:
-            nll_batch, ce_batch = result_batch
-            ce_batch_mean = np.mean(ce_batch, axis=2)
-            ces[start:end] = ce_batch_mean
-        else:
-            nll_batch = result_batch
-        nll_batch_mean = np.mean(-nll_batch, axis=2)  # Shape: B x T
-        nlls[start:end] = nll_batch_mean
+        if smooth_true:
+            true_counts_ = smooth_gaussian1d(true_counts_, kernel_sigma, kernel_width)
 
-    if return_cross_entropy:
-        return nlls, ces
-    return nlls
+        results[start:end] = f(logps_, true_counts_) 
 
+    return results
 
 def _kl_divergence(probs1, probs2):
     """
@@ -139,15 +138,15 @@ def _kl_divergence(probs1, probs2):
     L-arrays will be computed and returned in an A x B array. Does not
     renormalize the arrays. If probs2[i] is 0, that value contributes 0.
     """
-    quot = np.divide(
-        probs1, probs2, out=np.ones_like(probs1),
-        where=((probs1 != 0) & (probs2 != 0))
-        # No contribution if P1 = 0 or P2 = 0
-    )
-    return np.sum(probs1 * np.log(quot), axis=-1)
 
+    idxs = ((probs1 != 0) & (probs2 != 0))
+    quot_ = torch.divide(probs1, probs2)
 
-def jensen_shannon_distance(probs1, probs2):
+    quot = torch.ones_like(probs1)
+    quot[idxs] = quot_[idxs]
+    return torch.sum(probs1 * torch.log(quot), dim=-1)
+
+def jensen_shannon_distance(logps, true_counts):
     """
     Computes the Jesnsen-Shannon distance in the last dimension of `probs1` and
     `probs2`. `probs1` and `probs2` must be the same shape. For example, if they
@@ -157,317 +156,114 @@ def jensen_shannon_distance(probs1, probs2):
     the resulting JSD will be NaN.
     """
     # Renormalize both distributions, and if the sum is NaN, put NaNs all around
-    probs1_sum = np.sum(probs1, axis=-1, keepdims=True)
-    probs1 = np.divide(
-        probs1, probs1_sum, out=np.full_like(probs1, np.nan),
-        where=(probs1_sum != 0)
-    )
-    probs2_sum = np.sum(probs2, axis=-1, keepdims=True)
-    probs2 = np.divide(
-        probs2, probs2_sum, out=np.full_like(probs2, np.nan),
-        where=(probs2_sum != 0)
-    )
+
+    probs1 = torch.exp(logps)
+    probs1_sum = torch.sum(probs1, dim=-1, keepdims=True)
+    probs1 = torch.divide(probs1, probs1_sum, out=torch.zeros_like(probs1))
+
+    probs2_sum = torch.sum(true_counts, dim=-1, keepdims=True)
+    probs2 = torch.divide(true_counts, probs2_sum, out=torch.zeros_like(true_counts))
 
     mid = 0.5 * (probs1 + probs2)
     return 0.5 * (_kl_divergence(probs1, mid) + _kl_divergence(probs2, mid))
 
-
-def profile_jsd(
-    true_prof_probs, pred_prof_probs, prof_smooth_kernel_sigma,
-    prof_smooth_kernel_width, smooth_true_profs=True, smooth_pred_profs=False,
-    batch_size=200
-):
-    """
-    Computes the Jensen-Shannon divergence of the true and predicted profiles
-    given their raw probabilities or counts. The inputs will be renormalized
-    prior to JSD computation, so providing either raw probabilities or counts
-    is sufficient. If any entries are negative, the arrays are assumed to be
-    log probabilities and are exponentiated.
-
-    Arguments:
-        `true_prof_probs`: N x T x O x 2 array, where N is the number of
-            examples, T is the number of tasks, O is the output profile length;
-            contains the true profiles for each task and strand, as RAW
-            PROBABILITIES, LOG PROBABILITIES, or RAW COUNTS
-        `pred_prof_probs`: N x T x O x 2 array, containing the predicted
-            profiles for each task and strand, as RAW PROBABILITIES, LOG
-            PROBABILITIES, or RAW COUNTS
-        `smooth_true_profs`: whether or not to smooth the true profiles before
-            computing JSD
-        `smooth_pred_profs`: whether or not to smooth the predicted profiles
-            before computing JSD
-        `batch_size`: performs computation in a batch size of this many samples
-    
-    Returns an N x T array, where the JSD is computed across the profiles and
-    averaged between the strands, for each sample/task.
-    """
-    num_samples = true_prof_probs.shape[0]
-    num_tasks = true_prof_probs.shape[1]
-    jsds = np.empty((num_samples, num_tasks))
-
-    for start in range(0, num_samples, batch_size):
-        end = start + batch_size
-        true_prof_probs_batch = true_prof_probs[start:end]
-        pred_prof_probs_batch = pred_prof_probs[start:end]
-
-        # Turn into probabilities from log probabilities, if needed
-        if np.min(true_prof_probs_batch) < 0:
-            true_prof_probs_batch = np.exp(true_prof_probs_batch)
-        if np.min(pred_prof_probs_batch) < 0:
-            pred_prof_probs_batch = np.exp(pred_prof_probs_batch)
-
-        # Transpose to B x T x 2 x O, as JSD is computed along last dimension
-        true_prof_swap = np.swapaxes(true_prof_probs_batch, 2, 3)
-        pred_prof_swap = np.swapaxes(pred_prof_probs_batch, 2, 3)
-
-        # Smooth the profiles (by default, only smooth true profile)
-        if prof_smooth_kernel_width == 0:
-            sigma, truncate = 1, 0
-        else:
-            sigma = prof_smooth_kernel_sigma
-            truncate = (prof_smooth_kernel_width - 1) / (2 * sigma)
-        if smooth_true_profs:
-            true_prof_swap = scipy.ndimage.gaussian_filter1d(
-                true_prof_swap, sigma, axis=-1, truncate=truncate
-            )
-        if smooth_pred_profs:
-            pred_prof_swap = scipy.ndimage.gaussian_filter1d(
-                pred_prof_swap, sigma, axis=-1, truncate=truncate
-            )
-
-        jsd_batch = jensen_shannon_distance(true_prof_swap, pred_prof_swap)
-        jsd_batch_mean = np.mean(jsd_batch, axis=-1)  # Average over strands
-        jsds[start:end] = jsd_batch_mean
-    return jsds
-
-
 def pearson_corr(arr1, arr2):
-    """
+    """The Pearson correlation between two tensors across the last axis.
+
     Computes the Pearson correlation in the last dimension of `arr1` and `arr2`.
     `arr1` and `arr2` must be the same shape. For example, if they are both
     A x B x L arrays, then the correlation of corresponding L-arrays will be
     computed and returned in an A x B array.
+
+    Parameters
+    ----------
+    arr1: torch.tensor
+        One of the tensor to correlate.
+
+    arr2: torch.tensor
+        The other tensor to correlation.
+
+    Returns
+    -------
+    correlation: torch.tensor
+        The correlation for each element, calculated along the last axis.
     """
 
-    mean1 = np.mean(arr1, axis=-1, keepdims=True)
-    mean2 = np.mean(arr2, axis=-1, keepdims=True)
+    mean1 = torch.mean(arr1, axis=-1).unsqueeze(-1)
+    mean2 = torch.mean(arr2, axis=-1).unsqueeze(-1)
     dev1, dev2 = arr1 - mean1, arr2 - mean2
-    sqdev1, sqdev2 = np.square(dev1), np.square(dev2)
-    numer = np.sum(dev1 * dev2, axis=-1)  # Covariance
-    var1, var2 = np.sum(sqdev1, axis=-1), np.sum(sqdev2, axis=-1)  # Variances
-    denom = np.sqrt(var1 * var2)
+
+    sqdev1, sqdev2 = torch.square(dev1), torch.square(dev2)
+    numer = torch.sum(dev1 * dev2, axis=-1)  # Covariance
+    var1, var2 = torch.sum(sqdev1, axis=-1), torch.sum(sqdev2, axis=-1)  # Variances
+    denom = torch.sqrt(var1 * var2)
    
-    # Divide numerator by denominator, but use NaN where the denominator is 0
-    return np.divide(
-        numer, denom, out=np.full_like(numer, np.nan), where=(denom != 0)
-    )
-
-
-def average_ranks(arr):
-    """
-    Computes the ranks of the elemtns of the given array along the last
-    dimension. For ties, the ranks are _averaged_.
-    Returns an array of the same dimension of `arr`. 
-    """
-    
-    # 1) Generate the ranks for each subarray, with ties broken arbitrarily
-    sorted_inds = np.argsort(arr, axis=-1)  # Sorted indices
-    ranks, ranges = np.empty_like(arr), np.empty_like(arr)
-    ranges = np.tile(np.arange(arr.shape[-1]), arr.shape[:-1] + (1,))
-    # Put ranks by sorted indices; this creates an array containing the ranks of
-    # the elements in each subarray of `arr`
-    np.put_along_axis(ranks, sorted_inds, ranges, -1)
-    ranks = ranks.astype(int)
-
-    # 2) Create an array where each entry maps a UNIQUE element in `arr` to a
-    # unique index for that subarray
-    sorted_arr = np.take_along_axis(arr, sorted_inds, axis=-1)
-    diffs = np.diff(sorted_arr, axis=-1)
-    del sorted_arr  # Garbage collect
-    # Pad with an extra zero at the beginning of every subarray
-    pad_diffs = np.pad(diffs, ([(0, 0)] * (diffs.ndim - 1)) + [(1, 0)])
-    del diffs  # Garbage collect
-    # Wherever the diff is not 0, assign a value of 1; this gives a set of
-    # small indices for each set of unique values in the sorted array after
-    # taking a cumulative sum
-    pad_diffs[pad_diffs != 0] = 1
-    unique_inds = np.cumsum(pad_diffs, axis=-1).astype(int)
-    del pad_diffs  # Garbage collect
-
-    # 3) Average the ranks wherever the entries of the `arr` were identical
-    # `unique_inds` contains elements that are indices to an array that stores
-    # the average of the ranks of each unique element in the original array
-    unique_maxes = np.zeros_like(arr)  # Maximum ranks for each unique index
-    # Each subarray will contain unused entries if there are no repeats in that
-    # subarray; this is a sacrifice made for vectorization; c'est la vie
-    # Using `put_along_axis` will put the _last_ thing seen in `ranges`, which
-    # result in putting the maximum rank in each unique location
-    np.put_along_axis(unique_maxes, unique_inds, ranges, -1)
-    # We can compute the average rank for each bucket (from the maximum rank for
-    # each bucket) using some algebraic manipulation
-    diff = np.diff(unique_maxes, prepend=-1, axis=-1)  # Note: prepend -1!
-    unique_avgs = unique_maxes - ((diff - 1) / 2)
-    del unique_maxes, diff  # Garbage collect
-
-    # 4) Using the averaged ranks in `unique_avgs`, fill them into where they
-    # belong
-    avg_ranks = np.take_along_axis(
-        unique_avgs, np.take_along_axis(unique_inds, ranks, -1), -1
-    )
-
-    return avg_ranks
+    # Divide numerator by denominator, but use 0 where the denominator is 0
+    correlation = torch.zeros_like(numer)
+    correlation[denom != 0] = numer[denom != 0] / denom[denom != 0]
+    return correlation
 
 
 def spearman_corr(arr1, arr2):
-    """
-    Computes the Spearman correlation in the last dimension of `arr1` and
-    `arr2`. `arr1` and `arr2` must be the same shape. For example, if they are
-    both A x B x L arrays, then the correlation of corresponding L-arrays will
-    be computed and returned in an A x B array.
+    """The Spearman correlation between two tensors across the last axis.
+
+    Computes the Spearman correlation in the last dimension of `arr1` and `arr2`.
+    `arr1` and `arr2` must be the same shape. For example, if they are both
+    A x B x L arrays, then the correlation of corresponding L-arrays will be
+    computed and returned in an A x B array.
+
+    A dense ordering is used and ties are broken based on position in the
+    tensor.
+
+    Parameters
+    ----------
+    arr1: torch.tensor
+        One of the tensor to correlate.
+
+    arr2: torch.tensor
+        The other tensor to correlation.
+
+    Returns
+    -------
+    correlation: torch.tensor
+        The correlation for each element, calculated along the last axis.
     """
 
-    ranks1, ranks2 = average_ranks(arr1), average_ranks(arr2)
+    ranks1 = arr1.argsort().argsort().type(torch.float32)
+    ranks2 = arr2.argsort().argsort().type(torch.float32)
     return pearson_corr(ranks1, ranks2)
 
 
 def mean_squared_error(arr1, arr2):
-    """
-    Computes the mean squared error in the last dimension of `arr1` and `arr2`.
-    `arr1` and `arr2` must be the same shape. For example, if they are both
-    A x B x L arrays, then the MSE of corresponding L-arrays will be computed
-    and returned in an A x B array.
-    """
-    
-    return np.mean(np.square(arr1 - arr2), axis=-1)
+    """The mean squared error between two tensors averaged along the last axis.
 
+    Computes the element-wise squared error between two tensors and averages
+    these across the last dimension. `arr1` and `arr2` must be the same shape. 
+    For example, if they are both A x B x L arrays, then the correlation of 
+    corresponding L-arrays will be computed and returned in an A x B array.
 
-def profile_corr_mse(
-    true_prof_probs, pred_prof_probs, prof_smooth_kernel_sigma,
-    prof_smooth_kernel_width, smooth_true_profs=True, smooth_pred_profs=False,
-    batch_size=200
-):
-    """
-    Returns the correlations of the true and predicted PROFILE count
-    probabilities (i.e. per base or per bin). If any of the entries are
-    negative, the array is assumed to be log probabilities, and will be
-    exponentiated. If counts are provided, normalization will happen.
-    Arguments:
-        true_prof_probs`: N x T x O x 2 array, where N is the number of
-            examples, T is the number of tasks, O is the output profile length;
-            contains the true profiles for each task and strand, as RAW
-            PROBABILITIES, LOG PROBABILITIES, or RAW COUNTS
-        `pred_prof_probs`: N x T x O x 2 array, containing the predicted
-            profiles for each task and strand, as RAW PROBABILITIES, LOG
-            PROBABILITIES, or RAW COUNTS
-        `smooth_true_profs`: whether or not to smooth the true profiles before
-            computing correlations/MSE
-        `smooth_pred_profs`: whether or not to smooth the predicted profiles
-            before computing correlations/MSE
-        `batch_size`: performs computation in a batch size of this many samples
-    Returns 3 N x T arrays, containing the Pearson correlation, Spearman
-    correlation, and mean squared error of the profile predictions (as
-    probabilities). Correlations/MSE are computed for each sample/task (strands
-    are pooled together).
+    Parameters
+    ----------
+    arr1: torch.tensor
+        A tensor of values.
+
+    arr2: torch.tensor
+        Another tensor of values.
+
+    Returns
+    -------
+    mse: torch.tensor
+        The L2 distance between two tensors.
     """
 
-    num_samples, num_tasks = true_prof_probs.shape[:2]
-    pears = np.zeros((num_samples, num_tasks))
-    spear = np.zeros((num_samples, num_tasks))
-    mse = np.zeros((num_samples, num_tasks))
+    return torch.mean(torch.square(arr1 - arr2), axis=-1)
 
-    if prof_smooth_kernel_width == 0:
-        sigma, truncate = 1, 0
-    else:
-        sigma = prof_smooth_kernel_sigma
-        truncate = (prof_smooth_kernel_width - 1) / (2 * sigma)
-
-    for start in range(0, num_samples, batch_size):
-        end = start + batch_size
-        true_batch = true_prof_probs[start:end]  # Shapes: B x T x O x 2
-        pred_batch = pred_prof_probs[start:end]
-
-        # Turn into probabilities from log probabilities, if needed
-        if np.min(true_batch) < 0:
-            true_batch = np.exp(true_batch)
-        if np.min(pred_batch) < 0:
-            pred_batch = np.exp(pred_batch)
-
-        # Normalize into probabilities, if needed (keep 0 where all 0)
-        true_batch_sum = np.sum(true_batch, axis=2, keepdims=True)
-        if np.max(true_batch_sum) > 1.5:  # A little buffer
-            true_batch = np.divide(
-                true_batch, true_batch_sum,
-                out=np.zeros_like(true_batch, dtype=float),
-                where=(true_batch_sum != 0)
-            )
-        pred_batch_sum = np.sum(pred_batch, axis=2, keepdims=True)
-        if np.max(pred_batch_sum) > 1.5:
-            pred_batch = np.divide(
-                pred_batch, pred_batch_sum,
-                out=np.zeros_like(pred_batch, dtype=float),
-                where=(pred_batch_sum != 0)
-            )
-
-        # Smooth along the output profile length
-        if smooth_true_profs:
-            true_batch = scipy.ndimage.gaussian_filter1d(
-                true_batch, sigma, axis=2, truncate=truncate
-            )
-        if smooth_pred_profs:
-            pred_batch = scipy.ndimage.gaussian_filter1d(
-                pred_batch, sigma, axis=2, truncate=truncate
-            )
-
-        # Flatten by pooling strands
-        new_shape = (true_batch.shape[0], num_tasks, -1)
-        true_flat = np.reshape(true_batch, new_shape)
-        pred_flat = np.reshape(pred_batch, new_shape)
-
-        pears[start:end] = pearson_corr(true_flat, pred_flat)
-        spear[start:end] = spearman_corr(true_flat, pred_flat)
-        mse[start:end] = mean_squared_error(true_flat, pred_flat)
-
-    return pears, spear, mse
-
-
-def count_corr_mse(log_true_total_counts, log_pred_total_counts):
-    """
-    Returns the correlations of the true and predicted TOTAL counts.
-    Arguments:
-        `log_true_total_counts`: a N x T x 2 array, containing the true total
-            LOG COUNTS for each task and strand
-        `log_pred_total_counts`: a N x T x 2 array, containing the predicted
-            total LOG COUNTS for each task and strand
-    Returns 3 T-arrays, containing the Pearson correlation, Spearman
-    correlation, and mean squared error of the total count predictions (as log
-    counts). Correlations/MSE are computed for each task, over the samples and
-    strands.
-    """
-
-    # Reshape inputs to be T x N * 2 (i.e. pool samples and strands)
-    num_tasks = log_true_total_counts.shape[1]
-    log_true_total_counts = np.reshape(
-        np.swapaxes(log_true_total_counts, 0, 1), (num_tasks, -1)
-    )
-    log_pred_total_counts = np.reshape(
-        np.swapaxes(log_pred_total_counts, 0, 1), (num_tasks, -1)
-    )
-
-    pears = pearson_corr(log_true_total_counts, log_pred_total_counts)
-    spear = spearman_corr(log_true_total_counts, log_pred_total_counts)
-    mse = mean_squared_error(log_true_total_counts, log_pred_total_counts)
-
-    return pears, spear, mse
-
-def compute_performance_metrics(
-    true_profs, log_pred_profs, true_counts, log_pred_counts,
-    prof_smooth_kernel_sigma=7, prof_smooth_kernel_width=81, smooth_true_profs=True,
-    smooth_pred_profs=False
-):
+def calculate_performance_measures(logps, true_counts, pred_log_counts,
+    kernel_sigma=7, kernel_width=81, smooth_true=False, 
+    smooth_predictions=False, measures=None):
     """
     Computes some evaluation metrics on a set of positive examples, given the
     predicted profiles/counts, and the true profiles/counts.
-
     Arguments:
         `true_profs`: N x T x O x 2 array, where N is the number of
             examples, T is the number of tasks, and O is the output profile
@@ -486,7 +282,6 @@ def compute_performance_metrics(
             computing NLL, cross entropy, JSD, and correlations; predicted
             profiles will not be smoothed for any other metric
         `print_updates`: if True, print out updates and runtimes
-
     Returns a dictionary with the following:
         A N x T-array of the average negative log likelihoods for the profiles
             (given predicted probabilities, the likelihood for the true counts),
@@ -510,42 +305,48 @@ def compute_performance_metrics(
             strands and samples
     """
 
-    # Multinomial NLL
-    nll, ce = profile_multinomial_nll(
-        true_profs, log_pred_profs, true_counts, prof_smooth_kernel_sigma,
-        prof_smooth_kernel_width, smooth_pred_profs=smooth_pred_profs,
-        return_cross_entropy=True
-    )
+    measures_ = {}
 
-    # Jensen-Shannon divergence
-    # The true profile counts will be renormalized during JSD computation
-    jsd = profile_jsd(
-        true_profs, log_pred_profs, prof_smooth_kernel_sigma,
-        prof_smooth_kernel_width, smooth_true_profs=smooth_true_profs,
-        smooth_pred_profs=smooth_pred_profs
-    )
+    if measures is None or 'profile_mnll' in measures: 
+        measures_['profile_mnll'] = batched_smoothed_function(logps=logps, 
+            true_counts=true_counts, f=MNLLLoss, 
+            smooth_predictions=smooth_predictions, smooth_true=False, 
+            kernel_sigma=kernel_sigma, kernel_width=kernel_width)
 
-    # Profile probability correlations/MSE 
-    prof_pears, prof_spear, prof_mse = profile_corr_mse(
-        true_profs, log_pred_profs, prof_smooth_kernel_sigma,
-        prof_smooth_kernel_width, smooth_true_profs=smooth_true_profs,
-        smooth_pred_profs=smooth_pred_profs
-    )
+    if measures is None or 'profile_jsd' in measures: 
+        measures_['profile_jsd'] = batched_smoothed_function(logps=logps, 
+            true_counts=true_counts, f=jensen_shannon_distance, 
+            smooth_predictions=smooth_predictions, smooth_true=smooth_true, 
+            kernel_sigma=kernel_sigma, kernel_width=kernel_width)
+
+    if measures is None or 'profile_pearson' in measures:
+        measures_['profile_pearson'] = batched_smoothed_function(logps=logps, 
+            true_counts=true_counts, f=pearson_corr, 
+            smooth_predictions=smooth_predictions, smooth_true=smooth_true, 
+            exponentiate_logps=True, kernel_sigma=kernel_sigma, 
+            kernel_width=kernel_width)
+
+    if measures is None or 'profile_spearman' in measures:
+        measures_['profile_spearman'] = batched_smoothed_function(logps=logps, 
+            true_counts=true_counts, f=spearman_corr, 
+            smooth_predictions=smooth_predictions, smooth_true=smooth_true, 
+            exponentiate_logps=True, kernel_sigma=kernel_sigma, 
+            kernel_width=kernel_width)
+
 
     # Total count correlations/MSE
-    log_true_counts = np.log(true_counts + 1)
-    count_pears, count_spear, count_mse = count_corr_mse(
-        log_true_counts, log_pred_counts
-    )
+    true_log_counts = torch.log(true_counts.sum(dim=-1)+1)
 
-    return {
-        "nll": nll,
-        "cross_ent": ce,
-        "jsd": jsd,
-        "profile_pearson": prof_pears,
-        "profile_spearman": prof_spear,
-        "profile_mse": prof_mse,
-        "count_pearson": count_pears,
-        "count_spearman": count_spear,
-        "count_mse": count_mse
-    }
+    if measures is None or 'count_pearson' in measures:
+        measures_['count_pearson'] = pearson_corr(pred_log_counts.T, 
+            true_log_counts.T)
+
+    if measures is None or 'count_spearman' in measures:
+        measures_['count_spearman'] = spearman_corr(pred_log_counts.T, 
+            true_log_counts.T)
+
+    if measures is None or 'count_mse' in measures:
+        measures_['count_mse'] = mean_squared_error(pred_log_counts.T, 
+            true_log_counts.T)
+
+    return measures_

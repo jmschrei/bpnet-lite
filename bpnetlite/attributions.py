@@ -1,10 +1,11 @@
 # attributions.py
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
-# with code adapted from Avanti Shrikumar
 
 import numpy
+import numba
 import torch
 
+from tqdm import trange
 from captum.attr import DeepLiftShap
 
 class ProfileWrapper(torch.nn.Module):
@@ -55,6 +56,28 @@ class CountWrapper(torch.nn.Module):
 	def forward(self, X, X_ctl=None, **kwargs):
 		return self.model(X, X_ctl, **kwargs)[1]
 
+@numba.jit('void(int64, int64[:], int64[:], int32[:, :], int32[:,], int32[:, :], float32[:, :, :])')
+def _fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, counters, shuffled_sequences):
+	"""An internal function for fast shuffling using numba."""
+
+	for i in range(n_shuffles):
+		for char in chars:
+			n = next_idxs_counts[char]
+
+			next_idxs_ = numpy.arange(n)
+			next_idxs_[:-1] = numpy.random.permutation(n-1)  # Keep last index same
+			next_idxs[char, :n] = next_idxs[char, :n][next_idxs_]
+
+		idx = 0
+		shuffled_sequences[i, idxs[idx], 0] = 1
+		for j in range(1, len(idxs)):
+			char = idxs[idx]
+			count = counters[i, char]
+			idx = next_idxs[char, count]
+
+			counters[i, char] += 1
+			shuffled_sequences[i, idxs[idx], j] = 1
+
 
 def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 	"""Given a one-hot encoded sequence, dinucleotide shuffle it.
@@ -96,37 +119,30 @@ def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 		random_state = numpy.random.RandomState(random_state)
 
 	chars, idxs = torch.unique(sequence.argmax(axis=0), return_inverse=True)
-	chars, idxs = chars.cpu().numpy(), idxs.cpu().numpy()
+	chars, idxs = chars.numpy(), idxs.numpy()
 
-	next_idxs = []
+	next_idxs = numpy.zeros((len(chars), sequence.shape[1]), dtype=numpy.int32)
+	next_idxs_counts = numpy.zeros(max(chars)+1, dtype=numpy.int32)
+
 	for char in chars:
 		next_idxs_ = numpy.where(idxs[:-1] == char)[0]
-		next_idxs.append(next_idxs_ + 1) 
+		n = len(next_idxs_)
 
-	shuffled_sequences = torch.zeros(n_shuffles, *sequence.shape, dtype=torch.float32)
+		next_idxs[char][:n] = next_idxs_ + 1
+		next_idxs_counts[char] = n
 
-	for i in range(n_shuffles):
-		for char in chars:
-			next_idxs_ = numpy.arange(len(next_idxs[char]))
-			next_idxs_[:-1] = random_state.permutation(len(next_idxs_) - 1)  # Keep last index same
-			next_idxs[char] = next_idxs[char][next_idxs_]
+	shuffled_sequences = numpy.zeros((n_shuffles, *sequence.shape), dtype=numpy.float32)
+	counters = numpy.zeros((n_shuffles, len(chars)), dtype=numpy.int32)
 
-		counters = numpy.zeros(len(chars), dtype=numpy.int32)
-
-		idx = 0
-		shuffled_sequences[i, idxs[idx], 0] = 1
-		for j in range(1, len(idxs)):
-			char = idxs[idx]
-			idx = next_idxs[char][counters[char]]
-
-			counters[char] += 1
-			shuffled_sequences[i, idxs[idx], j] = 1
-
+	_fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, 
+		counters, shuffled_sequences)
+	
+	shuffled_sequences = torch.from_numpy(shuffled_sequences)
 	return shuffled_sequences
 
 
 def calculate_attributions(model, X, args=None, model_output="profile", 
-	n_shuffles=10, random_state=None):
+	hypothetical=False, n_shuffles=20, verbose=False, random_state=None):
 	"""Calculate attributions using DeepLift/Shap and a given model. 
 
 	This function will calculate DeepLift/Shap attributions on a set of
@@ -151,7 +167,13 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 		If "profile", wrap the model using ProfileWrapper and calculate
 		attributions with respect to the profile. If "count", wrap the model
 		using CountWrapper and calculate attributions with respect to the
-		count. Default is "profile". 
+		count. Default is "profile".
+
+	hypothetical: bool, optional
+		Whether to return attributions for all possible characters at each
+		position or only for the character that is actually at the sequence.
+		Practically, whether to return the returned attributions from captum
+		with the one-hot encoded sequence. Default is False.
 
 	n_shuffles: int, optional
 		The number of dinucleotide shuffles to return. Default is 10.
@@ -159,6 +181,9 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	batch_size: int, optional
 		The number of attributions to calculate at the same time. This is
 		limited by GPU memory. Default is 8.
+
+	verbose: bool, optional
+		Whether to display a progress bar.
 
 	random_state: int or None or numpy.random.RandomState, optional
 		The random seed to use to ensure determinism. If None, the
@@ -176,10 +201,11 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	
 	attributions = []
 	with torch.no_grad():
-		for i in range(len(X)):
-			X_ = torch.tensor(X[i:i+1]).cuda()
+		for i in trange(len(X), disable=not verbose):
+			X_ = X[i:i+1]
 			reference = dinucleotide_shuffle(X_[0], n_shuffles=n_shuffles, 
 				random_state=random_state).cuda()
+			X_ = X_.cuda()
 
 			if args is None:
 				args_ = None
@@ -187,8 +213,11 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 				args_ = tuple([arg[i:i+1].cuda() for arg in args])
 						
 			attr = ig.attribute(X_, reference, target=0, additional_forward_args=args_)
-			attr = (attr * X_).cpu()			
-			attributions.append(attr)
+
+			if not hypothetical:
+				attr = (attr * X_)
+			
+			attributions.append(attr.cpu())
 	
 	attributions = torch.cat(attributions)    
 	return attributions

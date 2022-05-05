@@ -39,7 +39,7 @@ def MNLLLoss(logps, true_counts):
 	log_fact_sum = torch.lgamma(torch.sum(true_counts, dim=-1) + 1)
 	log_prod_fact = torch.sum(torch.lgamma(true_counts + 1), dim=-1)
 	log_prod_exp = torch.sum(true_counts * logps, dim=-1)
-	return -torch.mean(log_fact_sum - log_prod_fact + log_prod_exp)
+	return -log_fact_sum + log_prod_fact - log_prod_exp
 
 def log1pMSELoss(log_predicted_counts, true_counts):
 	"""A MSE loss on the log(x+1) of the inputs.
@@ -64,47 +64,10 @@ def log1pMSELoss(log_predicted_counts, true_counts):
 
 	Returns
 	-------
-	loss: float
+	loss: torch.tensor, shape=(n, 1)
 		The MSE loss on the log of the two inputs, averaged over all examples
 		and all other dimensions.
 	"""
 
 	log_true = torch.log(true_counts+1)
-	return torch.nn.MSELoss()(log_predicted_counts, log_true)
-
-def pearson_corr(arr1, arr2):
-    """A Pearson correlation function implemented in PyTorch.
-
-    Computes the Pearson correlation in the last dimension of `arr1` and `arr2`.
-    `arr1` and `arr2` must be the same shape. For example, if they are both
-    A x B x L arrays, then the correlation of corresponding L-arrays will be
-    computed and returned in an A x B array. This function is the same as
-    the one in performance.py except it operates on PyTorch arrays.
-
-    Parameters
-    ----------
-    arr1: torch.tensor
-    	One of the tensor to correlate.
-
-    arr2: torch.tensor
-    	The other tensor to correlation.
-
-    Returns
-    -------
-	correlation: torch.tensor
-		The correlation for each element, calculated along the last axis.
-    """
-
-    mean1 = torch.mean(arr1, axis=-1).unsqueeze(-1)
-    mean2 = torch.mean(arr2, axis=-1).unsqueeze(-1)
-    dev1, dev2 = arr1 - mean1, arr2 - mean2
-
-    sqdev1, sqdev2 = torch.square(dev1), torch.square(dev2)
-    numer = torch.sum(dev1 * dev2, axis=-1)  # Covariance
-    var1, var2 = torch.sum(sqdev1, axis=-1), torch.sum(sqdev2, axis=-1)  # Variances
-    denom = torch.sqrt(var1 * var2)
-   
-    # Divide numerator by denominator, but use 0 where the denominator is 0
-    correlation = torch.zeros_like(numer)
-    correlation[denom != 0] = numer[denom != 0] / denom[denom != 0]
-    return correlation
+	return torch.mean(torch.square(log_true - log_predicted_counts), dim=-1)
