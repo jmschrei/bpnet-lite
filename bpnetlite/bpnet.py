@@ -87,8 +87,9 @@ class BPNet(torch.nn.Module):
 		number of positions removed is 2*trimming.
 	"""
 
-	def __init__(self, n_filters=64, n_layers=8, n_outputs=2, alpha=1, 
-		n_control_tracks=2, name=None, trimming=None):
+	def __init__(self, n_filters=64, n_layers=8, n_outputs=2, 
+		n_control_tracks=2, alpha=1, profile_output_bias=True, 
+		count_output_bias=True, name=None, trimming=None):
 		super(BPNet, self).__init__()
 		self.n_filters = n_filters
 		self.n_layers = n_layers
@@ -107,10 +108,11 @@ class BPNet(torch.nn.Module):
 		])
 
 		self.fconv = torch.nn.Conv1d(n_filters+n_control_tracks, n_outputs, kernel_size=75, 
-			padding=37)
+			padding=37, bias=profile_output_bias)
 		
 		n_count_control = 1 if n_control_tracks > 0 else 0
-		self.linear = torch.nn.Linear(n_filters+n_count_control, 1)
+		self.linear = torch.nn.Linear(n_filters+n_count_control, 1, 
+			bias=count_output_bias)
 
 	def forward(self, X, X_ctl=None):
 		"""A forward pass of the model.
