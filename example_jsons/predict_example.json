@@ -1,0 +1,14 @@
+{
+   "batch_size":64,
+   "in_window":2114,
+   "out_window":1000,
+   "verbose":true,
+   "chroms":[
+      "chr4",
+      "chr15",
+      "chr21"
+   ],
+   "sequences":"../../oak/common/hg38/hg38.fa",
+   "peaks":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "model":"bpnet.64.8.torch"
+}

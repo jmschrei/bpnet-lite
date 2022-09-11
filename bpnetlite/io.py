@@ -163,7 +163,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 		return X, y
 
-def extract_peaks(peaks, sequences, signals, controls=None, chroms=None, 
+def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None, 
 	in_window=2114, out_window=1000, max_jitter=128, min_counts=None,
 	max_counts=None, verbose=False):
 	"""Extract sequences and signals at coordinates from a peak file.
@@ -192,11 +192,11 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		keys are the unique set of chromosoms and the values are one-hot
 		encoded sequences as numpy arrays or memory maps.
 
-	signals: list of strs or list of dictionaries
+	signals: list of strs or list of dictionaries or None, optional
 		A list of filepaths to bigwig files, where each filepath will be read
 		using pyBigWig, or a list of dictionaries where the keys are the same
 		set of unique chromosomes and the values are numpy arrays or memory
-		maps.
+		maps. If None, no signal tensor is returned. Default is None.
 
 	controls: list of strs or list of dictionaries or None, optional
 		A list of filepaths to bigwig files, where each filepath will be read
@@ -242,6 +242,7 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		The extracted signals where the first dimension is in the same order
 		as peaks in the peak file after optional filtering by chromosome and
 		the second dimension is in the same order as the list of signal files.
+		If no signal files are given, this is not returned.
 
 	controls: torch.tensor, shape=(n, len(controls), out_window+2*max_jitter)
 		The extracted controls where the first dimension is in the same order
@@ -270,9 +271,10 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		peaks = peaks[numpy.isin(peaks['chrom'], chroms)]
 
 	# Load the signal and optional control tracks if filenames are given
-	for i, signal in enumerate(signals):
-		if isinstance(signal, str):
-			signals[i] = pyBigWig.open(signal, "r")
+	if signals is not None:
+		for i, signal in enumerate(signals):
+			if isinstance(signal, str):
+				signals[i] = pyBigWig.open(signal, "r")
 
 	if controls is not None:
 		for i, control in enumerate(controls):
@@ -287,15 +289,16 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		end = mid + out_width + max_jitter
 
 		# Extract the signal from each of the signal files
-		signals_.append([])
-		for signal in signals:
-			if isinstance(signal, dict):
-				signal_ = signal[chrom][start:end]
-			else:
-				signal_ = signal.values(chrom, start, end, numpy=True)
-				signal_ = numpy.nan_to_num(signal_)
+		if signals is not None:
+			signals_.append([])
+			for signal in signals:
+				if isinstance(signal, dict):
+					signal_ = signal[chrom][start:end]
+				else:
+					signal_ = signal.values(chrom, start, end, numpy=True)
+					signal_ = numpy.nan_to_num(signal_)
 
-			signals_[-1].append(signal_)
+				signals_[-1].append(signal_)
 
 		# For the sequences and controls extract a window the size of the input
 		start = mid - in_width - max_jitter
@@ -323,19 +326,28 @@ def extract_peaks(peaks, sequences, signals, controls=None, chroms=None,
 		seqs.append(seq)
 
 	seqs = torch.tensor(numpy.array(seqs), dtype=torch.float32)
-	signals_ = torch.tensor(numpy.array(signals_), dtype=torch.float32)
 
-	idxs = torch.ones(signals_.shape[0], dtype=torch.bool)
-	if max_counts is not None:
-		idxs = (idxs) & (signals_.sum(dim=(1, 2)) < max_counts)
-	if min_counts is not None:
-		idxs = (idxs) & (signals_.sum(dim=(1, 2)) > min_counts)
+	if signals is not None:
+		signals_ = torch.tensor(numpy.array(signals_), dtype=torch.float32)
 
-	if controls is not None:
-		controls_ = torch.tensor(numpy.array(controls_), dtype=torch.float32)
-		return seqs[idxs], signals_[idxs], controls_[idxs]
+		idxs = torch.ones(signals_.shape[0], dtype=torch.bool)
+		if max_counts is not None:
+			idxs = (idxs) & (signals_.sum(dim=(1, 2)) < max_counts)
+		if min_counts is not None:
+			idxs = (idxs) & (signals_.sum(dim=(1, 2)) > min_counts)
 
-	return seqs[idxs], signals_[idxs]
+		if controls is not None:
+			controls_ = torch.tensor(numpy.array(controls_), dtype=torch.float32)
+			return seqs[idxs], signals_[idxs], controls_[idxs]
+
+		return seqs[idxs], signals_[idxs]
+	else:
+		if controls is not None:
+			controls_ = torch.tensor(numpy.array(controls_), dtype=torch.float32)
+			return seqs, controls_
+
+		return seqs			
+
 
 def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None, 
 	in_window=2114, out_window=1000, max_jitter=128, reverse_complement=True, 

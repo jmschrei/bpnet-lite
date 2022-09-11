@@ -9,7 +9,7 @@
    "max_epochs":250,
    "validation_iter":100,
    "lr":0.001,
-   "alpha":1,
+   "alpha":10,
    "verbose":true,
    "training_chroms":[
       "chr1",
@@ -35,11 +35,15 @@
       "chr15",
       "chr21"
    ],
-   "sequence_path":"../../../../common/hg38/hg38.fa",
-   "peak_path":"../../data/tf_data/ENCSR000BGW/peaks.bed.gz",
-   "plus_bw_path":"../../data/tf_data/ENCSR000BGW/ENCSR000BGW_plus.bigWig",
-   "minus_bw_path":"../../data/tf_data/ENCSR000BGW/ENCSR000BGW_minus.bigWig",
-   "plus_ctl_bw_path":"../../data/tf_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig",
-   "minus_ctl_bw_path":"../../data/tf_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig",
+   "sequences":"../../oak/common/hg38/hg38.fa",
+   "peaks":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "signals":[
+      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_plus.bigWig", 
+      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_minus.bigWig"
+   ],
+   "controls":[
+      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig", 
+      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig"
+   ],
    "random_state": 0
 }
