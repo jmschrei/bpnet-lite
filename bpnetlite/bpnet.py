@@ -17,7 +17,10 @@ from .losses import log1pMSELoss
 from .performance import pearson_corr
 from .performance import calculate_performance_measures
 
+from .logging import Logger
+
 torch.backends.cudnn.benchmark = True
+
 
 class BPNet(torch.nn.Module):
 	"""A basic BPNet model with stranded profile and total count prediction.
@@ -85,11 +88,16 @@ class BPNet(torch.nn.Module):
 		The amount to trim from both sides of the input window to get the
 		output window. This value is removed from both sides, so the total
 		number of positions removed is 2*trimming.
+
+	verbose: bool, optional
+		Whether to display statistics during training. Setting this to False
+		will still save the file at the end, but does not print anything to
+		screen during training. Default is True.
 	"""
 
 	def __init__(self, n_filters=64, n_layers=8, n_outputs=2, 
 		n_control_tracks=2, alpha=1, profile_output_bias=True, 
-		count_output_bias=True, name=None, trimming=None):
+		count_output_bias=True, name=None, trimming=None, verbose=True):
 		super(BPNet, self).__init__()
 		self.n_filters = n_filters
 		self.n_layers = n_layers
@@ -107,12 +115,18 @@ class BPNet(torch.nn.Module):
 				dilation=2**i) for i in range(1, self.n_layers+1)
 		])
 
-		self.fconv = torch.nn.Conv1d(n_filters+n_control_tracks, n_outputs, kernel_size=75, 
-			padding=37, bias=profile_output_bias)
+		self.fconv = torch.nn.Conv1d(n_filters+n_control_tracks, n_outputs, 
+			kernel_size=75, padding=37, bias=profile_output_bias)
 		
 		n_count_control = 1 if n_control_tracks > 0 else 0
 		self.linear = torch.nn.Linear(n_filters+n_count_control, 1, 
 			bias=count_output_bias)
+
+		self.logger = Logger(["Epoch", "Iteration", "Training Time",
+			"Validation Time", "Training MNLL", "Training Count MSE", 
+			"Validation MNLL", "Validation Profile Pearson", 
+			"Validation Count Pearson", "Validation Count MSE", "Saved?"], 
+			verbose=verbose)
 
 	def forward(self, X, X_ctl=None):
 		"""A forward pass of the model.
@@ -130,8 +144,8 @@ class BPNet(torch.nn.Module):
 			The one-hot encoded batch of sequences.
 
 		X_ctl: torch.tensor, shape=(batch_size, n_strands, sequence_length)
-			A value representing the signal of the control at each position in the
-			sequence.
+			A value representing the signal of the control at each position in 
+			the sequence.
 
 		Returns
 		-------
@@ -196,15 +210,10 @@ class BPNet(torch.nn.Module):
 		if X_ctl_valid is not None:
 			X_ctl_valid = X_ctl_valid.cuda()
 
-		columns = "Epoch\tIteration\tTraining Time\tValidation Time\t"
-		columns += "T MNLL\tT Count log1pMSE\t"
-		columns += "V MNLL\tV Profile Pearson\tV Count Pearson\tV Count log1pMSE"
-		columns += "\tSaved?"
-		if verbose:
-			print(columns)
 
 		iteration = 0
 		best_loss = float("inf")
+		self.logger.start()
 
 		for epoch in range(max_epochs):
 			tic = time.time()
@@ -251,7 +260,6 @@ class BPNet(torch.nn.Module):
 
 						tic = time.time()
 						y_profile, y_counts = self.predict(X_valid, X_ctl_valid)
-						valid_time = time.time() - tic
 
 						z = y_profile.shape
 						y_profile = y_profile.reshape(y_profile.shape[0], -1)
@@ -263,27 +271,26 @@ class BPNet(torch.nn.Module):
 							kernel_width=81, measures=['profile_mnll', 
 							'profile_pearson', 'count_pearson', 'count_mse'])
 
-						line = "{}\t{}\t{:4.4}\t{:4.4}\t".format(epoch, iteration,
-							train_time, valid_time)
+						profile_corr = measures['profile_pearson']
+						count_corr = measures['count_pearson']
+						
+						valid_loss = measures['profile_mnll'].mean()
+						valid_loss += self.alpha * measures['count_mse'].mean()
+						valid_time = time.time() - tic
 
-						line += "{:4.4}\t{:4.4}\t".format(profile_loss_, 
-							count_loss_)
+						self.logger.add([epoch, iteration, train_time, 
+							valid_time, profile_loss_, count_loss_, 
+							measures['profile_mnll'].mean().item(), 
+							numpy.nan_to_num(profile_corr).mean(),
+							numpy.nan_to_num(count_corr).mean(), 
+							measures['count_mse'].mean().item(),
+							(valid_loss < best_loss).item()])
 
-						line += "{:4.4}\t{:4.4}\t{:4.4}\t{:4.4}".format(
-							measures['profile_mnll'].mean(), 
-							numpy.nan_to_num(measures['profile_pearson']).mean(),
-							numpy.nan_to_num(measures['count_pearson']).mean(), 
-							measures['count_mse'].mean()
-						)
-
-						valid_loss = measures['profile_mnll'].mean() + self.alpha * measures['count_mse'].mean()
-						line += "\t{}".format(valid_loss < best_loss)
+						self.logger.save("{}.log".format(self.name))
 
 						if valid_loss < best_loss:
 							torch.save(self, "{}.torch".format(self.name))
 							best_loss = valid_loss
-					
-						print(line)
 
 				iteration += 1
 

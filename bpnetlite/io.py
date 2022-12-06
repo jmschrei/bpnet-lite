@@ -1,5 +1,5 @@
 # io.py
-# Author: Jacob Schreiber
+# Author: Jacob Schreiber <jmschreiber91@gmail.com>
 # Code adapted from Avanti Shrikumar and Ziga Avsec
 
 import numpy
@@ -163,19 +163,19 @@ class DataGenerator(torch.utils.data.Dataset):
 
 		return X, y
 
-def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None, 
+def extract_loci(loci, sequences, signals=None, controls=None, chroms=None, 
 	in_window=2114, out_window=1000, max_jitter=128, min_counts=None,
 	max_counts=None, verbose=False):
-	"""Extract sequences and signals at coordinates from a peak file.
+	"""Extract sequences and signals at coordinates from a locus file.
 
 	This function will take in genome-wide sequences, signals, and optionally
 	controls, and extract the values of each at the coordinates specified in
-	the peak file and return them as tensors.
+	the locus file/s and return them as tensors.
 
 	Signals and controls are both lists with the length of the list, n_s
 	and n_c respectively, being the middle dimension of the returned
 	tensors. Specifically, the returned tensors of size 
-	(len(peaks), n_s/n_c, (out_window/in_wndow)+max_jitter*2).
+	(len(loci), n_s/n_c, (out_window/in_wndow)+max_jitter*2).
 
 	The values for sequences, signals, and controls, can either be filepaths
 	or dictionaries of numpy arrays or a mix of the two. When a filepath is 
@@ -183,9 +183,12 @@ def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None,
 
 	Parameters
 	----------
-	peaks: str or pandas.DataFrame
+	loci: str or pandas.DataFrame or list/tuple of such
 		Either the path to a bed file or a pandas DataFrame object containing
-		three columns: the chromosome, the start, and the end, of each peak.
+		three columns: the chromosome, the start, and the end, of each locus
+		to train on. Alternatively, a list or tuple of strings/DataFrames where
+		the intention is to train on the interleaved concatenation, i.e., when
+		you want to train on peaks and negatives.
 
 	sequences: str or dictionary
 		Either the path to a fasta file to read from or a dictionary where the
@@ -205,8 +208,8 @@ def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None,
 		maps. If None, no control tensor is returned. Default is None. 
 
 	chroms: list or None, optional
-		A set of chromosomes to extact peaks from. Peaks in other chromosomes
-		in the peak file are ignored. If None, all peaks are used. Default is
+		A set of chromosomes to extact loci from. Loci in other chromosomes
+		in the locus file are ignored. If None, all loci are used. Default is
 		None.
 
 	in_window: int, optional
@@ -235,18 +238,18 @@ def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None,
 	Returns
 	-------
 	seqs: torch.tensor, shape=(n, 4, in_window+2*max_jitter)
-		The extracted sequences in the same order as the peaks in the peak
+		The extracted sequences in the same order as the loci in the locus
 		file after optional filtering by chromosome.
 
 	signals: torch.tensor, shape=(n, len(signals), out_window+2*max_jitter)
 		The extracted signals where the first dimension is in the same order
-		as peaks in the peak file after optional filtering by chromosome and
+		as loci in the locus file after optional filtering by chromosome and
 		the second dimension is in the same order as the list of signal files.
 		If no signal files are given, this is not returned.
 
 	controls: torch.tensor, shape=(n, len(controls), out_window+2*max_jitter)
 		The extracted controls where the first dimension is in the same order
-		as peaks in the peak file after optional filtering by chromosome and
+		as loci in the locus file after optional filtering by chromosome and
 		the second dimension is in the same order as the list of control files.
 		If no control files are given, this is not returned.
 	"""
@@ -258,17 +261,23 @@ def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None,
 	if isinstance(sequences, str):
 		sequences = pyfaidx.Fasta(sequences)
 
-	# Load the peaks or rename the columns to be consistent
 	names = ['chrom', 'start', 'end']
-	if isinstance(peaks, str):
-		peaks = pandas.read_csv(peaks, sep="\t", usecols=(0, 1, 2), 
-			header=None, index_col=False, names=names)
-	else:
-		peaks = peaks.copy()
-		peaks.columns = names
+	if not isinstance(loci, (tuple, list)):
+		loci = [loci]
+
+	loci_dfs = []
+	for i, df in enumerate(loci):
+	    if isinstance(df, str):
+	        df = pandas.read_csv(df, sep='\t', usecols=[0, 1, 2], 
+	            header=None, index_col=False, names=names)
+	        df['idx'] = numpy.arange(len(df)) * len(loci) + i
+
+	    loci_dfs.append(df)
+
+	loci = pandas.concat(loci_dfs).set_index("idx").sort_index().reset_index(drop=True)
 
 	if chroms is not None:
-		peaks = peaks[numpy.isin(peaks['chrom'], chroms)]
+		loci = loci[numpy.isin(loci['chrom'], chroms)]
 
 	# Load the signal and optional control tracks if filenames are given
 	if signals is not None:
@@ -281,10 +290,20 @@ def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None,
 			if isinstance(control, str):
 				controls[i] = pyBigWig.open(control, "r")
 
-	desc = "Loading Peaks"
+	desc = "Loading Loci"
 	d = not verbose
-	for chrom, start, end in tqdm(peaks.values, disable=d, desc=desc):
+
+	max_width = max(in_width, out_width)
+
+	for chrom, start, end in tqdm(loci.values, disable=d, desc=desc):
 		mid = start + (end - start) // 2
+
+		if start - max_width - max_jitter < 0:
+			continue
+
+		if end + max_width + max_jitter >= len(sequences[chrom]):
+			continue
+
 		start = mid - out_width - max_jitter
 		end = mid + out_width + max_jitter
 
@@ -349,7 +368,7 @@ def extract_peaks(peaks, sequences, signals=None, controls=None, chroms=None,
 		return seqs			
 
 
-def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None, 
+def PeakGenerator(loci, sequences, signals, controls=None, chroms=None, 
 	in_window=2114, out_window=1000, max_jitter=128, reverse_complement=True, 
 	min_counts=None, max_counts=None, random_state=None, pin_memory=True, 
 	num_workers=0, batch_size=32, verbose=False):
@@ -361,9 +380,12 @@ def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None,
 
 	Parameters
 	----------
-	peaks: str or pandas.DataFrame
+	loci: str or pandas.DataFrame or list/tuple of such
 		Either the path to a bed file or a pandas DataFrame object containing
-		three columns: the chromosome, the start, and the end, of each peak.
+		three columns: the chromosome, the start, and the end, of each locus
+		to train on. Alternatively, a list or tuple of strings/DataFrames where
+		the intention is to train on the interleaved concatenation, i.e., when
+		you want ot train on peaks and negatives.
 
 	sequences: str or dictionary
 		Either the path to a fasta file to read from or a dictionary where the
@@ -383,8 +405,8 @@ def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None,
 		maps. If None, no control tensor is returned. Default is None. 
 
 	chroms: list or None, optional
-		A set of chromosomes to extact peaks from. Peaks in other chromosomes
-		in the peak file are ignored. If None, all peaks are used. Default is
+		A set of chromosomes to extact loci from. Loci in other chromosomes
+		in the locus file are ignored. If None, all loci are used. Default is
 		None.
 
 	in_window: int, optional
@@ -433,7 +455,7 @@ def PeakGenerator(peaks, sequences, signals, controls=None, chroms=None,
 		A PyTorch DataLoader wrapped DataGenerator object.
 	"""
 
-	X = extract_peaks(peaks=peaks, sequences=sequences, signals=signals, 
+	X = extract_loci(loci=loci, sequences=sequences, signals=signals, 
 		controls=controls, chroms=chroms, in_window=in_window, 
 		out_window=out_window, max_jitter=max_jitter, min_counts=min_counts,
 		max_counts=max_counts, verbose=verbose)

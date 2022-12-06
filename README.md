@@ -13,7 +13,7 @@ There are two main ways to use bpnet-lite. The first is through the Python API, 
 ```python
 import torch
 
-from bpnetlite.io import extract_peaks
+from bpnetlite.io import extract_loci
 from bpnetlite.io import PeakGenerator
 from bpnetlite import BPNet
 
@@ -28,7 +28,7 @@ valid_chroms = ['chr{}'.format(i) for i in range(18, 23)]
 training_data = PeakGenerator(peaks, seqs, signals, controls, 
 	chroms=training_chroms)
 
-X_valid, y_valid, X_ctl_valid = extract_peaks(peaks, seqs, signals, controls, 
+X_valid, y_valid, X_ctl_valid = extract_loci(peaks, seqs, signals, controls, 
 	chroms=valid_chroms, max_jitter=0)
 
 model = BPNet(n_outputs=2, n_control_tracks=2, trimming=(2114 - 1000) // 2).cuda()

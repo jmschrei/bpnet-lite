@@ -3,5 +3,6 @@
 # Code adapted from Avanti Shrikumar and Ziga Avsec
 
 from .bpnet import BPNet
+from .chrombpnet import ChromBPNet
 
-__version__ = '0.1.1'
+__version__ = '0.2.0'

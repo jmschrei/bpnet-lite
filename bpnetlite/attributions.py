@@ -4,9 +4,12 @@
 import numpy
 import numba
 import torch
+import pandas
+import logomaker
 
 from tqdm import trange
 from captum.attr import DeepLiftShap
+
 
 class ProfileWrapper(torch.nn.Module):
 	"""A wrapper class that returns transformed profiles.
@@ -221,3 +224,27 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	
 	attributions = torch.cat(attributions)    
 	return attributions
+
+
+def plot_attributions(X_attr, ax):
+	"""Plot the attributions using logomaker.
+
+	Takes in a matrix of attributions and plots the attribution-weighted
+	sequence using logomaker. This is a convenience function.
+
+
+	Parameters
+	----------
+	X_attr: torch.tensor, shape=(4, -1)
+		A tensor of the attributions. Can be either the hypothetical
+		attributions, where the entire matrix has values, or the projected
+		attributions, where only the actual bases have their attributions
+		stored, i.e., 3 values per column are zero.
+	"""
+
+	df = pandas.DataFrame(X_attr.T, columns=['A', 'C', 'G', 'T'])
+	df.index.name = 'pos'
+	
+	logo = logomaker.Logo(df, ax=ax, font_name='Arial Rounded')
+	logo.style_spines(visible=False)
+	return logo

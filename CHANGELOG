@@ -1,0 +1,40 @@
+===============
+Release History
+===============
+
+Version 0.2.0
+==============
+
+Highlights
+----------
+
+	- Addition of a `ChromBPNet` model
+	- Addition of an explicit, shared, `Logger` class
+	- "Peak" semantics have been switched to "locus" semantics
+
+
+chrombpnet.py
+-------------
+
+	- Newly added.
+	- This file contains the `ChromBPNet` class, which is a wrapper that
+	takes in two BPNet objects: a pre-trained bias model, and an untrained
+	accessibility model, and specifies the training procedure for training
+	the accessibility model.
+
+
+io.py
+-----
+
+	- The semantics of "peaks", e.g. `extract_peaks`, has been changed to loci,
+	e.g. `extract_loci`, and the associated keywords (now `loci` from `peaks`)
+	can take in a list or tuple of files to interleave them. This means you
+	can now train on peaks and background regions.
+
+
+logging.py
+----------
+
+	- Newly added.
+	- This file contains the `Logger` class which is a simple way to record
+	and display statistics during training.
