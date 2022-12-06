@@ -50,9 +50,6 @@ valid_chroms = ['chr{}'.format(i) for i in range(18, 23)]
 
 Next, you should load up your peaks by passing in the peak loci, sequences, signals, and control tracks. If `controls=None` then no controls are passed into the model. Likewise, the length of `signals` should be equal to the number of outputs in your model and can be just one if dealing with unstranded data.
 
-<<<<<<< HEAD
-X_valid, y_valid, X_ctl_valid = extract_loci(peaks, seqs, signals, controls, 
-=======
 ```python
 training_data = PeakGenerator(peaks, seqs, signals, controls, chroms=training_chroms)
 ```
@@ -60,9 +57,7 @@ training_data = PeakGenerator(peaks, seqs, signals, controls, chroms=training_ch
 The `PeakGenerator` function is a wrapper around several functions which extract data, pass it into a data generator, and pass that into a PyTorch data loader object. The end result is an object that can be directly iterated over while training a model. However, this great for a validation set because we want that to be fixed and the `PeakGenerator` object has options to jitter the data, randomly reverse complement it, and randomly sample from the peaks. Instead, we want to just use the `extract_peaks` function to extract the raw data at these locations. Note that, if there are no controls, you should exclude `X_ctl_valid`. 
 
 ```python
-X_valid, y_valid, X_ctl_valid = extract_peaks(peaks, seqs, signals, controls, 
->>>>>>> e724a5dc36a6a64d0aa65b074f9b4314f38b071e
-	chroms=valid_chroms, max_jitter=0)
+X_valid, y_valid, X_ctl_valid = extract_peaks(peaks, seqs, signals, controls, chroms=valid_chroms, max_jitter=0)
 ```
 
 Now, we can define the model. If you want to change the architecture, check out the documentation.
