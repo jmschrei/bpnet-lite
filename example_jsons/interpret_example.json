@@ -9,7 +9,7 @@
       "chr21"
    ],
    "sequences":"../../oak/common/hg38/hg38.fa",
-   "peaks":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
    "model":"bpnet.64.8.torch",
    "output":"count",
    "random_state":0
