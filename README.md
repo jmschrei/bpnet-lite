@@ -1,5 +1,7 @@
 # bpnet-lite
 
+![bpnet-schematic](https://user-images.githubusercontent.com/3916816/215882453-873d2835-c639-47d5-a84b-b57a7922fce0.png)
+
 bpnet-lite is a lightweight version of [BPNet](https://www.nature.com/articles/s41588-021-00782-6) that contains a reference implementation in PyTorch, efficient data loaders, and a command-line tool for training, making predictions for, and calculating attributions from, a model. This implementation is meant to be used for quickly exploring data sets using BPNet and as a springboard for prototyping new ideas that involve modifying the code. Important: bpnet-lite does not include all of the features that have been developed for BPNet: see https://github.com/kundajelab/basepairmodels for that.
 
 ### Installation
