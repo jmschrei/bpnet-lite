@@ -5,12 +5,15 @@
 import sys
 import numpy
 import torch
+import pyfaidx
 import argparse
 
 from bpnetlite import BPNet
 from bpnetlite.io import PeakGenerator
 from bpnetlite.io import extract_loci
+
 from bpnetlite.attributions import calculate_attributions
+from bpnetlite.marginalize import marginalization_report
 
 import json
 
@@ -23,7 +26,7 @@ desc = """BPNet is an neural network primarily composed of dilated residual
 
 # Read in the arguments
 parser = argparse.ArgumentParser(description=desc)
-subparsers = parser.add_subparsers(help="Must be either 'train', 'predict', or 'interpret'.", required=True, dest='cmd')
+subparsers = parser.add_subparsers(help="Must be either 'train', 'predict', 'interpret', or 'marginalize'.", required=True, dest='cmd')
 
 train_parser = subparsers.add_parser("train", help="Train a BPNet model.")
 train_parser.add_argument("-p", "--parameters", type=str, required=True,
@@ -36,6 +39,11 @@ predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 interpret_parser = subparsers.add_parser("interpret", help="Make interpretations using a trained BPNet model.")
 interpret_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
+
+marginalize_parser = subparsers.add_parser("marginalize", help="Run marginalizations given motifs.")
+marginalize_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters for calculating attributions.")
+
 
 # Pull the arguments
 args = parser.parse_args()
@@ -153,7 +161,7 @@ elif args.cmd == 'predict':
 
 			parameters[parameter] = value
 
-	model = torch.load(parameters['model'])
+	model = torch.load(parameters['model']).cuda()
 
 	examples = extract_loci(
 		sequences=parameters['sequences'],
@@ -207,7 +215,7 @@ elif args.cmd == 'interpret':
 
 			parameters[parameter] = value
 
-	model = torch.load(parameters['model'])
+	model = torch.load(parameters['model']).cuda()
 
 	X = extract_loci(
 		sequences=parameters['sequences'],
@@ -229,3 +237,54 @@ elif args.cmd == 'interpret':
 
 	numpy.savez_compressed(parameters['ohe_filename'], X)
 	numpy.savez_compressed(parameters['shap_filename'], X_attr)
+
+elif args.cmd == 'marginalize':
+	with open(args.parameters, "r") as infile:
+		parameters = json.load(infile)
+
+	default_parameters = {
+		'batch_size': 64,
+		'in_window': 2114,
+		'out_window': 1000,
+		'verbose': False,
+		'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
+			'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
+			'chr18', 'chr19', 'chr20', 'chr22'],
+		'sequences': None,
+		'motifs': None,
+		'loci': None,
+		'n_loci': None,
+		'shuffle': False,
+		'model': None,
+		'output_filename':'marginalize/',
+		'random_state':0,
+	}
+
+	for parameter, value in default_parameters.items():
+		if parameter not in parameters:
+			if value is None and parameter != "controls":
+				raise ValueError("Must provide value for '{}'".format(parameter))
+
+			parameters[parameter] = value
+
+	model = torch.load(parameters['model']).cuda()
+
+	X = extract_loci(
+		sequences=parameters['sequences'],
+		loci=parameters['loci'],
+		chroms=parameters['chroms'],
+		max_jitter=0,
+		verbose=parameters['verbose']
+	)
+
+	if parameters['shuffle'] == True:
+		idxs = numpy.arange(X.shape[0])
+		numpy.random.shuffle(idxs)
+		X = X[idxs]
+
+	if parameters['n_loci'] is not None:
+		X = X[:parameters['n_loci']]
+
+	motifs = pyfaidx.Fasta(parameters['motifs'])
+	marginalization_report(model, motifs, X, 
+		parameters['output_filename'])

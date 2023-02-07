@@ -7,6 +7,7 @@ or adapted for your own circumstances. The implementation takes in a
 stranded control track and makes predictions for stranded outputs.
 """
 
+import h5py
 import time 
 import numpy
 import torch
@@ -109,10 +110,14 @@ class BPNet(torch.nn.Module):
 		self.trimming = trimming or 2 ** n_layers
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
+		self.irelu = torch.nn.ReLU()
 
 		self.rconvs = torch.nn.ModuleList([
 			torch.nn.Conv1d(n_filters, n_filters, kernel_size=3, padding=2**i, 
 				dilation=2**i) for i in range(1, self.n_layers+1)
+		])
+		self.rrelus = torch.nn.ModuleList([
+			torch.nn.ReLU() for i in range(1, self.n_layers+1)
 		])
 
 		self.fconv = torch.nn.Conv1d(n_filters+n_control_tracks, n_outputs, 
@@ -155,9 +160,9 @@ class BPNet(torch.nn.Module):
 
 		start, end = self.trimming, X.shape[2] - self.trimming
 
-		X = torch.nn.ReLU()(self.iconv(X))
+		X = self.irelu(self.iconv(X))
 		for i in range(self.n_layers):
-			X_conv = torch.nn.ReLU()(self.rconvs[i](X))
+			X_conv = self.rrelus[i](self.rconvs[i](X))
 			X = torch.add(X, X_conv)
 
 		if X_ctl is None:
@@ -295,3 +300,50 @@ class BPNet(torch.nn.Module):
 				iteration += 1
 
 		torch.save(self, "{}.final.torch".format(self.name))
+
+	@classmethod
+	def from_chrombpnet_lite(cls, filename):
+		h5 = h5py.File(filename, "r")
+		w = h5['model_weights']
+
+		if 'model_1' in w.keys():
+			w = w['model_1']
+			bias = False
+		else:
+			bias = True
+
+		k, b = 'kernel:0', 'bias:0'
+		name = "conv1d_{}_1" if not bias else "conv1d_{0}/conv1d_{0}"
+
+		layer_names = []
+		for layer_name in w.keys():
+			try:
+				idx = int(layer_name.split("_")[1])
+				layer_names.append(idx)
+			except:
+				pass
+
+		n_filters = w[name.format(1)][k].shape[2]
+		n_layers = max(layer_names) - 2
+
+		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
+			n_control_tracks=0, trimming=(2114-1000)//2)
+
+		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
+			x[:]).permute(2, 1, 0))
+		convert_b = lambda x: torch.nn.Parameter(torch.tensor(x[:]))
+
+		model.iconv.weight = convert_w(w[name.format(1)][k])
+		model.iconv.bias = convert_b(w[name.format(1)][b])
+
+		for i in range(2, n_layers+2):
+			model.rconvs[i-2].weight = convert_w(w[name.format(i)][k])
+			model.rconvs[i-2].bias = convert_b(w[name.format(i)][b])
+
+		model.fconv.weight = convert_w(w[name.format(n_layers+2)][k])
+		model.fconv.bias = convert_b(w[name.format(n_layers+2)][b])
+
+		name = "logcounts_1" if not bias else "logcounts/logcounts"
+		model.linear.weight = torch.nn.Parameter(torch.tensor(w[name][k][:].T))
+		model.linear.bias = convert_b(w[name][b])
+		return model

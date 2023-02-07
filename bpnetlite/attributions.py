@@ -33,10 +33,12 @@ class ProfileWrapper(torch.nn.Module):
 	def forward(self, X, X_ctl=None, **kwargs):
 		logits = self.model(X, X_ctl, **kwargs)[0]
 		logits = logits.reshape(X.shape[0], -1)
-		
-		y = torch.nn.functional.log_softmax(logits, dim=-1)
-		y = torch.exp(y)
-		return (logits * y).sum(axis=-1).unsqueeze(-1)
+		logits = logits - torch.mean(logits, dim=-1, keepdims=True)
+		l = torch.clone(logits).detach()
+
+		y = torch.exp(l - torch.logsumexp(l, dim=-1, keepdims=True))
+		return (logits * y).sum(axis=-1, keepdims=True)
+
 
 class CountWrapper(torch.nn.Module):
 	"""A wrapper class that only returns the predicted counts.
@@ -58,6 +60,52 @@ class CountWrapper(torch.nn.Module):
 
 	def forward(self, X, X_ctl=None, **kwargs):
 		return self.model(X, X_ctl, **kwargs)[1]
+
+
+def hypothetical_attributions(multipliers, inputs, baselines):
+    """A function for aggregating contributions into hypothetical attributions.
+
+    When handling categorical data, like one-hot encodings, the attributions
+    returned by a method like DeepLIFT/SHAP may need to be modified slightly.
+    Specifically, one needs to account for each nucleotide change actually
+    being the addition of one category AND the subtraction of another category.
+    Basically, once you've calculated the multipliers, you need to subtract
+    out the contribution of the nucleotide actually present and then add in
+    the contribution of the nucleotide you are becomming.
+
+    These values are then averaged over all references.
+
+
+    Parameters
+    ----------
+    multipliers: torch.tensor, shape=(n_baselines, 4, length)
+    	The multipliers determined by DeepLIFT
+
+    inputs: torch.tensor, shape=(n_baselines, 4, length)
+    	The one-hot encoded sequence being explained, copied several times.
+
+    baselines: torch.tensor, shape=(n_baselines, 4, length)
+    	The one-hot encoded baseline sequences.
+
+
+    Returns
+    -------
+	projected_contribs: torch.tensor, shape=(1, 4, length)
+		The attribution values for each nucleotide in the input.
+	"""
+
+    projected_contribs = torch.zeros_like(baselines[0], dtype=torch.float64)
+    
+    for i in range(inputs[0].shape[1]):
+        hypothetical_input = torch.zeros_like(inputs[0], dtype=torch.float64)
+        hypothetical_input[:, i] = 1.0
+        hypothetical_diffs = hypothetical_input - baselines[0]
+        hypothetical_contribs = hypothetical_diffs * multipliers[0]
+        
+        projected_contribs[:, i] = torch.sum(hypothetical_contribs, dim=1)
+    
+    return (projected_contribs,)
+
 
 @numba.jit('void(int64, int64[:], int64[:], int32[:, :], int32[:,], int32[:, :], float32[:, :, :])')
 def _fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, counters, shuffled_sequences):
@@ -145,7 +193,8 @@ def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 
 
 def calculate_attributions(model, X, args=None, model_output="profile", 
-	hypothetical=False, n_shuffles=20, verbose=False, random_state=None):
+	hypothetical=False, n_shuffles=20, return_references=False, verbose=False, 
+	random_state=None):
 	"""Calculate attributions using DeepLift/Shap and a given model. 
 
 	This function will calculate DeepLift/Shap attributions on a set of
@@ -153,6 +202,7 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	not softmax probabilities, and count predictions in the second output.
 	It will create GC-matched negatives to use as a reference and proceed
 	using the given batch size.
+
 
 	Parameters
 	----------
@@ -185,12 +235,28 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 		The number of attributions to calculate at the same time. This is
 		limited by GPU memory. Default is 8.
 
+	return_references: bool, optional
+		Whether to return the references that were generated during this
+		process.
+
 	verbose: bool, optional
 		Whether to display a progress bar.
 
 	random_state: int or None or numpy.random.RandomState, optional
 		The random seed to use to ensure determinism. If None, the
 		process is not deterministic. Default is None. 
+
+
+	Returns
+	-------
+	attributions: torch.tensor
+		The attributions calculated for each input sequence, with the same
+		shape as the input sequences.
+
+	references: torch.tensor, optional
+		The references used for each input sequence, with the shape
+		(n_input_sequences, n_shuffles, 4, length). Only returned if
+		`return_references = True`. 
 	"""
 
 	if model_output == "profile":
@@ -203,11 +269,13 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	ig = DeepLiftShap(wrapper)
 	
 	attributions = []
+	references = []
 	with torch.no_grad():
 		for i in trange(len(X), disable=not verbose):
 			X_ = X[i:i+1]
 			reference = dinucleotide_shuffle(X_[0], n_shuffles=n_shuffles, 
 				random_state=random_state).cuda()
+
 			X_ = X_.cuda()
 
 			if args is None:
@@ -215,14 +283,22 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 			else:
 				args_ = tuple([arg[i:i+1].cuda() for arg in args])
 						
-			attr = ig.attribute(X_, reference, target=0, additional_forward_args=args_)
+			attr = ig.attribute(X_, reference, target=0, 
+				additional_forward_args=args_, 
+				custom_attribution_func=hypothetical_attributions)
 
 			if not hypothetical:
 				attr = (attr * X_)
 			
+			if return_references:
+				references.append(reference.unsqueeze(0))
+
 			attributions.append(attr.cpu())
 	
-	attributions = torch.cat(attributions)    
+	attributions = torch.cat(attributions)
+
+	if return_references:
+		return attributions, torch.cat(references)
 	return attributions
 
 
@@ -245,6 +321,6 @@ def plot_attributions(X_attr, ax):
 	df = pandas.DataFrame(X_attr.T, columns=['A', 'C', 'G', 'T'])
 	df.index.name = 'pos'
 	
-	logo = logomaker.Logo(df, ax=ax, font_name='Arial Rounded')
+	logo = logomaker.Logo(df, ax=ax)
 	logo.style_spines(visible=False)
 	return logo
