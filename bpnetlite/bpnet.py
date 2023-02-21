@@ -173,10 +173,10 @@ class BPNet(torch.nn.Module):
 		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
 
 		# counts prediction
-		X = torch.mean(X[:, :, start-37:end+37], axis=2)
+		X = torch.mean(X[:, :, start-37:end+37], dim=2)
 
 		if X_ctl is not None:
-			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], axis=(1, 2))
+			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], dim=(1, 2))
 			X_ctl = X_ctl.unsqueeze(-1)
 			X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
 
@@ -210,7 +210,7 @@ class BPNet(torch.nn.Module):
 
 		if X_valid is not None:
 			X_valid = X_valid.cuda()
-			y_valid_counts = y_valid.sum(axis=2)
+			y_valid_counts = y_valid.sum(dim=2)
 
 		if X_ctl_valid is not None:
 			X_ctl_valid = X_ctl_valid.cuda()

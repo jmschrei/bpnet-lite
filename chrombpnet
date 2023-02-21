@@ -123,7 +123,7 @@ if args.cmd == "train":
 
 	trimming = (parameters['in_window'] - parameters['out_window']) // 2
 
-	bias = torch.load(parameters['bias_model'])
+	bias = torch.load(parameters['bias_model'], map_location='cpu').cuda().eval()
 	accessibility = BPNet(n_filters=parameters['n_filters'], 
 		n_layers=parameters['n_layers'], n_control_tracks=0, n_outputs=1,
 		alpha=parameters['alpha'],
