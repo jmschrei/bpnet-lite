@@ -94,10 +94,10 @@ def hypothetical_attributions(multipliers, inputs, baselines):
 		The attribution values for each nucleotide in the input.
 	"""
 
-    projected_contribs = torch.zeros_like(baselines[0], dtype=torch.float64)
+    projected_contribs = torch.zeros_like(baselines[0], dtype=baselines[0].dtype)
     
     for i in range(inputs[0].shape[1]):
-        hypothetical_input = torch.zeros_like(inputs[0], dtype=torch.float64)
+        hypothetical_input = torch.zeros_like(inputs[0], dtype=baselines[0].dtype)
         hypothetical_input[:, i] = 1.0
         hypothetical_diffs = hypothetical_input - baselines[0]
         hypothetical_contribs = hypothetical_diffs * multipliers[0]

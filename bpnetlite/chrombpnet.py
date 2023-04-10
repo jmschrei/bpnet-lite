@@ -108,8 +108,8 @@ class ChromBPNet(torch.nn.Module):
 		y_profile, y_counts = [], []
 		for start in range(0, len(X), batch_size):
 			y_profile_, y_counts_ = self(X[start:start+batch_size])
-			y_profile.append(y_profile_)
-			y_counts.append(y_counts_)
+			y_profile.append(y_profile_.cpu())
+			y_counts.append(y_counts_.cpu())
 
 		return torch.cat(y_profile), torch.cat(y_counts)
 

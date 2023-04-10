@@ -155,7 +155,6 @@ elif args.cmd == 'predict':
 			'chr18', 'chr19', 'chr20', 'chr22'],
 		'sequences': None,
 		'loci': None,
-		'controls': None,
 		'model': None,
 		'profile_filename': 'y_profile.npz',
 		'count_filename': 'y_count.npz'
@@ -163,33 +162,22 @@ elif args.cmd == 'predict':
 
 	for parameter, value in default_parameters.items():
 		if parameter not in parameters:
-			if value is None and parameter != "controls":
+			if value is None:
 				raise ValueError("Must provide value for '{}'".format(parameter))
 
 			parameters[parameter] = value
 
 	model = torch.load(parameters['model']).cuda()
 
-	examples = extract_loci(
+	X = extract_loci(
 		sequences=parameters['sequences'],
-		controls=parameters['controls'],
 		loci=parameters['loci'],
 		chroms=parameters['chroms'],
 		max_jitter=0,
 		verbose=parameters['verbose']
-	)
+	).cuda()
 
-	if parameters['controls'] == None:
-		X = examples
-		if model.n_control_tracks > 0:
-			X_ctl = torch.zeros(X.shape[0], model.n_control_tracks, X.shape[-1])
-		else:
-			X_ctl = None
-	else:
-		X, X_ctl = examples
-
-	y_profiles, y_counts = model.predict(X, X_ctl=X_ctl, 
-		batch_size=parameters['batch_size'])
+	y_profiles, y_counts = model.predict(X, batch_size=parameters['batch_size'])
 
 	numpy.savez_compressed(parameters['profile_filename'], y_profiles)
 	numpy.savez_compressed(parameters['count_filename'], y_counts)
