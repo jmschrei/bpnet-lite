@@ -5,4 +5,4 @@
 from .bpnet import BPNet
 from .chrombpnet import ChromBPNet
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'

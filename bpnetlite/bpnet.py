@@ -256,7 +256,6 @@ class BPNet(torch.nn.Module):
 			y_counts = torch.cat(y_counts)
 			return y_profiles, y_counts
 
-
 	def fit(self, training_data, optimizer, X_valid=None, X_ctl_valid=None, 
 		y_valid=None, max_epochs=100, batch_size=64, validation_iter=100, 
 		verbose=True):

@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='bpnet-lite',
-    version='0.3.0',
+    version='0.3.1',
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
     packages=['bpnetlite'],
@@ -16,6 +16,12 @@ setup(
         "pandas >= 1.3.3",
         "pyBigWig >= 0.3.17",
         "torch >= 1.9.0",
-        "h5py >= 3.7.0"
+        "h5py >= 3.7.0",
+        "pyfaidx >= 0.7.2.1",
+        "tqdm >= 4.64.1",
+        "numba >= 0.55.1",
+        "logomaker",
+        "captum == 0.5.0",
+        "seaborn >= 0.11.2"
     ],
 )
