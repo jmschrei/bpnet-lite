@@ -1,6 +1,7 @@
 # attributions.py
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
+import time
 import numpy
 import numba
 import torch
@@ -9,6 +10,9 @@ import logomaker
 
 from tqdm import trange
 from captum.attr import DeepLiftShap
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class ProfileWrapper(torch.nn.Module):
@@ -63,48 +67,48 @@ class CountWrapper(torch.nn.Module):
 
 
 def hypothetical_attributions(multipliers, inputs, baselines):
-    """A function for aggregating contributions into hypothetical attributions.
+	"""A function for aggregating contributions into hypothetical attributions.
 
-    When handling categorical data, like one-hot encodings, the attributions
-    returned by a method like DeepLIFT/SHAP may need to be modified slightly.
-    Specifically, one needs to account for each nucleotide change actually
-    being the addition of one category AND the subtraction of another category.
-    Basically, once you've calculated the multipliers, you need to subtract
-    out the contribution of the nucleotide actually present and then add in
-    the contribution of the nucleotide you are becomming.
+	When handling categorical data, like one-hot encodings, the attributions
+	returned by a method like DeepLIFT/SHAP may need to be modified slightly.
+	Specifically, one needs to account for each nucleotide change actually
+	being the addition of one category AND the subtraction of another category.
+	Basically, once you've calculated the multipliers, you need to subtract
+	out the contribution of the nucleotide actually present and then add in
+	the contribution of the nucleotide you are becomming.
 
-    These values are then averaged over all references.
-
-
-    Parameters
-    ----------
-    multipliers: torch.tensor, shape=(n_baselines, 4, length)
-    	The multipliers determined by DeepLIFT
-
-    inputs: torch.tensor, shape=(n_baselines, 4, length)
-    	The one-hot encoded sequence being explained, copied several times.
-
-    baselines: torch.tensor, shape=(n_baselines, 4, length)
-    	The one-hot encoded baseline sequences.
+	These values are then averaged over all references.
 
 
-    Returns
-    -------
+	Parameters
+	----------
+	multipliers: torch.tensor, shape=(n_baselines, 4, length)
+		The multipliers determined by DeepLIFT
+
+	inputs: torch.tensor, shape=(n_baselines, 4, length)
+		The one-hot encoded sequence being explained, copied several times.
+
+	baselines: torch.tensor, shape=(n_baselines, 4, length)
+		The one-hot encoded baseline sequences.
+
+
+	Returns
+	-------
 	projected_contribs: torch.tensor, shape=(1, 4, length)
 		The attribution values for each nucleotide in the input.
 	"""
 
-    projected_contribs = torch.zeros_like(baselines[0], dtype=baselines[0].dtype)
-    
-    for i in range(inputs[0].shape[1]):
-        hypothetical_input = torch.zeros_like(inputs[0], dtype=baselines[0].dtype)
-        hypothetical_input[:, i] = 1.0
-        hypothetical_diffs = hypothetical_input - baselines[0]
-        hypothetical_contribs = hypothetical_diffs * multipliers[0]
-        
-        projected_contribs[:, i] = torch.sum(hypothetical_contribs, dim=1)
-    
-    return (projected_contribs,)
+	projected_contribs = torch.zeros_like(baselines[0], dtype=baselines[0].dtype)
+	
+	for i in range(inputs[0].shape[1]):
+		hypothetical_input = torch.zeros_like(inputs[0], dtype=baselines[0].dtype)
+		hypothetical_input[:, i] = 1.0
+		hypothetical_diffs = hypothetical_input - baselines[0]
+		hypothetical_contribs = hypothetical_diffs * multipliers[0]
+		
+		projected_contribs[:, i] = torch.sum(hypothetical_contribs, dim=1)
+
+	return (projected_contribs,)
 
 
 @numba.jit('void(int64, int64[:], int64[:], int32[:, :], int32[:,], int32[:, :], float32[:, :, :])')
@@ -267,7 +271,7 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 		raise ValueError("model_output must be one of 'profile' or 'count'.")
 
 	ig = DeepLiftShap(wrapper)
-	
+
 	attributions = []
 	references = []
 	with torch.no_grad():
@@ -294,7 +298,7 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 				references.append(reference.unsqueeze(0))
 
 			attributions.append(attr.cpu())
-	
+
 	attributions = torch.cat(attributions)
 
 	if return_references:

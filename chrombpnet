@@ -28,61 +28,114 @@ desc = """ChromBPNet is a neural network that builds off the original BPNet
 	tool."""
 
 
-
 # Read in the arguments
 parser = argparse.ArgumentParser(description=desc)
-subparsers = parser.add_subparsers(help="Must be either 'bias' or 'train' or 'predict'.", required=True, dest='cmd')
+subparsers = parser.add_subparsers(help="Must be either 'bias' or 'fit' or 'predict'.", required=True, dest='cmd')
 
-train_parser = subparsers.add_parser("train", help="Train a ChromBPNet model.")
-train_parser.add_argument("-p", "--parameters", type=str, required=True,
+fit_parser = subparsers.add_parser("fit", help="Fit a ChromBPNet model.")
+fit_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for training the model.")
 
 predict_parser = subparsers.add_parser("predict", help="Make predictions using a trained ChromBPNet model.")
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
-bias_parser = subparsers.add_parser("bias", help="Train a bias model.")
+bias_parser = subparsers.add_parser("bias", help="Fit a bias model.")
 bias_parser.add_argument("-p", "--parameters", type=str, required=True,
-	help="A JSON file containing the parameters for training the model.")
+	help="A JSON file containing the parameters for fitting the model.")
 
+###
+# Default Parameters
+###
+
+default_fit_parameters = {
+	'n_filters': 64,
+	'n_layers': 8,
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'max_jitter': 128,
+	'reverse_complement': True,
+	'max_epochs': 250,
+	'validation_iter': 100,
+	'lr': 0.001,
+	'alpha': 1,
+	'verbose': False,
+
+	'min_counts': 0,
+	'max_counts': 99999999,
+	'bias_model': None,
+
+	'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
+		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
+		'chr18', 'chr19', 'chr20', 'chr22'],
+	'validation_chroms': ['chr4', 'chr15', 'chr21'],
+	'sequences': None,
+	'loci': None,
+	'signals': None,
+	'random_state': None
+
+}
+
+default_predict_parameters = {
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'verbose': False,
+	'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
+		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
+		'chr18', 'chr19', 'chr20', 'chr22'],
+	'sequences': None,
+	'loci': None,
+	'model': None,
+	'profile_filename': 'y_profile.npz',
+	'count_filename': 'y_count.npz'
+}
+
+default_bias_parameters = {
+	'n_filters': 256,
+	'n_layers': 4,
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'max_jitter': 128,
+	'reverse_complement': True,
+	'max_epochs': 250,
+	'validation_iter': 100,
+	'lr': 0.001,
+	'early_stopping': None,
+	'alpha': 1,
+	'beta': 0.5,
+	'verbose': False,
+
+	'min_counts': 0,
+	'max_counts': None,
+
+	'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
+		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
+		'chr18', 'chr19', 'chr20', 'chr22'],
+	'validation_chroms': ['chr4', 'chr15', 'chr21'],
+	'sequences': None,
+	'peaks': None,
+	'negatives': None,
+	'signals': None,
+	'random_state': None
+
+}
+
+###
+# Commands
+###
 
 # Pull the arguments
 args = parser.parse_args()
 
-if args.cmd == "train":
+# Fit ChromBPNet model
+if args.cmd == "fit":
 	with open(args.parameters, "r") as infile:
 		parameters = json.load(infile)
 
-	default_parameters = {
-		'n_filters': 64,
-		'n_layers': 8,
-		'batch_size': 64,
-		'in_window': 2114,
-		'out_window': 1000,
-		'max_jitter': 128,
-		'reverse_complement': True,
-		'max_epochs': 250,
-		'validation_iter': 100,
-		'lr': 0.001,
-		'alpha': 1,
-		'verbose': False,
-
-		'min_counts': 0,
-		'max_counts': 99999999,
-		'bias_model': None,
-
-		'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-			'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-			'chr18', 'chr19', 'chr20', 'chr22'],
-		'validation_chroms': ['chr4', 'chr15', 'chr21'],
-		'sequences': None,
-		'loci': None,
-		'signals': None,
-		'random_state': None
-
-	}
-
-	for parameter, value in default_parameters.items():
+	for parameter, value in default_fit_parameters.items():
 		if parameter not in parameters:
 			if value is None:
 				raise ValueError("Must provide value for '{}'".format(parameter))
@@ -134,33 +187,19 @@ if args.cmd == "train":
 			parameters['n_layers']))
 
 
-	optimizer = torch.optim.Adam(model.parameters(), lr=parameters['lr'])
+	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
 
 	model.fit_generator(training_data, optimizer, X_valid=valid_sequences, 
 		y_valid=valid_signals, max_epochs=parameters['max_epochs'], 
 		validation_iter=parameters['validation_iter'], 
 		batch_size=parameters['batch_size'])
 
+# Make predictions from the full ChromBPNet model
 elif args.cmd == 'predict':
 	with open(args.parameters, "r") as infile:
 		parameters = json.load(infile)
 
-	default_parameters = {
-		'batch_size': 64,
-		'in_window': 2114,
-		'out_window': 1000,
-		'verbose': False,
-		'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-			'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-			'chr18', 'chr19', 'chr20', 'chr22'],
-		'sequences': None,
-		'loci': None,
-		'model': None,
-		'profile_filename': 'y_profile.npz',
-		'count_filename': 'y_count.npz'
-	}
-
-	for parameter, value in default_parameters.items():
+	for parameter, value in default_predict_parameters.items():
 		if parameter not in parameters:
 			if value is None:
 				raise ValueError("Must provide value for '{}'".format(parameter))
@@ -182,43 +221,14 @@ elif args.cmd == 'predict':
 	numpy.savez_compressed(parameters['profile_filename'], y_profiles)
 	numpy.savez_compressed(parameters['count_filename'], y_counts)
 
+# Fit the bias model
 elif args.cmd == 'bias':
 	with open(args.parameters, "r") as infile:
 		parameters = json.load(infile)
 
-	default_parameters = {
-		'n_filters': 256,
-		'n_layers': 4,
-		'batch_size': 64,
-		'in_window': 2114,
-		'out_window': 1000,
-		'max_jitter': 128,
-		'reverse_complement': True,
-		'max_epochs': 250,
-		'validation_iter': 100,
-		'lr': 0.001,
-		'alpha': 1,
-		'beta': 0.5,
-		'verbose': False,
-
-		'min_counts': 0,
-		'max_counts': None,
-
-		'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-			'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-			'chr18', 'chr19', 'chr20', 'chr22'],
-		'validation_chroms': ['chr4', 'chr15', 'chr21'],
-		'sequences': None,
-		'peaks': None,
-		'negatives': None,
-		'signals': None,
-		'random_state': None
-
-	}
-
-	for parameter, value in default_parameters.items():
+	for parameter, value in default_bias_parameters.items():
 		if parameter not in parameters:
-			if value is None:
+			if parameter != 'max_counts' and value is None:
 				raise ValueError("Must provide value for '{}'".format(parameter))
 
 			parameters[parameter] = value
@@ -231,7 +241,7 @@ elif args.cmd == 'bias':
 			signals=parameters['signals'],
 			controls=None,
 			loci=parameters['peaks'],
-			chroms=parameters['validation_chroms'],
+			chroms=parameters['training_chroms'],
 			in_window=parameters['in_window'],
 			out_window=parameters['out_window'],
 			max_jitter=0,
@@ -244,7 +254,7 @@ elif args.cmd == 'bias':
 		loci=parameters['negatives'], 
 		sequences=parameters['sequences'],
 		signals=parameters['signals'],
-		chroms=parameters['validation_chroms'],
+		chroms=parameters['training_chroms'],
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
 		max_jitter=parameters['max_jitter'],
@@ -272,13 +282,15 @@ elif args.cmd == 'bias':
 
 	model = BPNet(n_filters=parameters['n_filters'], 
 		n_layers=parameters['n_layers'], n_outputs=1, n_control_tracks=0,
-		alpha=parameters['alpha'],
+		alpha=parameters['alpha'], 
+		name='bias.{}.{}'.format(parameters['n_filters'], 
+			parameters['n_layers']),
 		trimming=trimming).cuda()
 
-	optimizer = torch.optim.Adam(model.parameters(), lr=parameters['lr'])
+	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
 
-	model.fit_generator(training_data, optimizer, X_valid=valid_sequences, 
+	model.fit(training_data, optimizer, X_valid=valid_sequences, 
 		y_valid=valid_signals, max_epochs=parameters['max_epochs'], 
-		validation_iter=parameters['validation_iter'], 
+		validation_iter=parameters['validation_iter'],
+		early_stopping=parameters['early_stopping'],
 		batch_size=parameters['batch_size'])
-

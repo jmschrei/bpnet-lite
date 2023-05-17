@@ -258,7 +258,7 @@ class BPNet(torch.nn.Module):
 
 	def fit(self, training_data, optimizer, X_valid=None, X_ctl_valid=None, 
 		y_valid=None, max_epochs=100, batch_size=64, validation_iter=100, 
-		verbose=True):
+		early_stopping=None, verbose=True):
 		"""Fit the model to data and validate it periodically.
 
 		This method controls the training of a BPNet model. It will fit the
@@ -308,6 +308,12 @@ class BPNet(torch.nn.Module):
 			enables the total validating time to be small compared to the
 			training time by only validating periodically. Default is 100.
 
+		early_stopping: int or None
+			Whether to stop training early. If None, continue training until
+			max_epochs is reached. If an integer, continue training until that
+			number of `validation_iter` ticks has been hit without improvement
+			in performance. Default is None.
+
 		verbose: bool
 			Whether to print out the training and evaluation statistics during
 			training. Default is True.
@@ -322,6 +328,7 @@ class BPNet(torch.nn.Module):
 
 
 		iteration = 0
+		early_stop_count = 0
 		best_loss = float("inf")
 		self.logger.start()
 
@@ -401,8 +408,17 @@ class BPNet(torch.nn.Module):
 						if valid_loss < best_loss:
 							torch.save(self, "{}.torch".format(self.name))
 							best_loss = valid_loss
+							early_stop_count = 0
+						else:
+							early_stop_count += 1
+
+				if early_stopping is not None and early_stop_count >= early_stopping:
+					break
 
 				iteration += 1
+
+			if early_stopping is not None and early_stop_count >= early_stopping:
+				break
 
 		torch.save(self, "{}.final.torch".format(self.name))
 

@@ -165,7 +165,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 def extract_loci(loci, sequences, signals=None, controls=None, chroms=None, 
 	in_window=2114, out_window=1000, max_jitter=128, min_counts=None,
-	max_counts=None, verbose=False):
+	max_counts=None, n_loci=None, verbose=False):
 	"""Extract sequences and signals at coordinates from a locus file.
 
 	This function will take in genome-wide sequences, signals, and optionally
@@ -232,6 +232,12 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 		and across all tasks, needed to be kept. If None, no maximum. Default 
 		is None.  
 
+	n_loci: int or None, optional
+		A cap on the number of loci to return. Note that this is not the
+		number of loci that are considered. The difference is that some
+		loci may be filtered out for various reasons, and those are not
+		counted towards the total. If None, no cap. Default is None.
+
 	verbose: bool, optional
 		Whether to display a progress bar while loading. Default is False.
 
@@ -294,6 +300,7 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 	d = not verbose
 
 	max_width = max(in_width, out_width)
+	loci_count = 0
 
 	for chrom, start, end in tqdm(loci.values, disable=d, desc=desc):
 		mid = start + (end - start) // 2
@@ -303,6 +310,9 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 
 		if end + max_width + max_jitter >= len(sequences[chrom]):
 			continue
+
+		if n_loci is not None and loci_count == n_loci:
+			break 
 
 		start = mid - out_width - max_jitter
 		end = mid + out_width + max_jitter
@@ -343,6 +353,7 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 				alphabet=['A', 'C', 'G', 'T', 'N']).T
 		
 		seqs.append(seq)
+		loci_count += 1
 
 	seqs = torch.tensor(numpy.array(seqs), dtype=torch.float32)
 
