@@ -8,9 +8,14 @@ bpnet-lite is a lightweight version of [BPNet](https://www.nature.com/articles/s
 
 You can install bpnet-lite with `pip install bpnet-lite`.
 
-### Command Line Tools
+### BPNet Command Line Tools
 
-bpnet-lite comes with a tool, `bpnet`, that can be used to train a BPNet model, make predictions for a set of loci from a pre-trained model, and calculate DeepLift/DeepSHAP attribution scores for a set of loci. Each command requires a JSON with parameters, with examples of each in the `example_jsons` folder. 
+bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps necessary for training and using BPNet models. Specifically, it can be used to calculate GC-matched negatives from a peak file, train a BPNet model with flexibility as to the inputs, use a trained model to make predictions, use a trained model to calculate DeepLIFT/DeepSHAP attribution scores, and to perform marginalization experiments. Each comment, except for calculating GC-matched negatives, requires a JSON that contains the parameters, with examples of each in the `example_jsons` folder. 
+
+#### Calculating GC-matched negatives
+`bpnet negatives -i <peaks>.bed -f <fasta>.fa -b <bigwig>.bw -o matched_loci.bed -l 0.02 -w 2114 -v`
+
+This command takes in a bed file of loci, some information about the genome being considered, the GC bin size, and the width of the window to calculate GC content for (usually the same size as the model input window), and returns a set of loci that are GC-matched and not within the provided bed file coordinates. If a FASTA file is provided, the first step is to calculate a rolling average of the GC content using the provided window size, and store that average at the provided bigwig path. If the GC content has already been calculated and stored as a bigwig, a FASTA file does not need to be provided and the bigwig will be used directly.
 
 #### Training a BPNet model 
 `bpnet train -p example_train_bpnet.json`
