@@ -135,7 +135,7 @@ def _plot_attributions(y, ylim, path, figsize=(10,3), **kwargs):
 
 
 def marginalization_report(model, motifs, sequences, output_dir):
-	motifs = list(read_meme(motifs).items())[:50]
+	motifs = list(read_meme(motifs).items())
 
 	if not os.path.isdir(output_dir):
 		os.mkdir(output_dir)
