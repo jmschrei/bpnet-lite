@@ -11,7 +11,8 @@ import pyBigWig
 
 from tqdm import tqdm
 
-def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8', 
+
+def one_hot_encode(sequence, alphabet=['A', 'C', 'G', 'T'], dtype='int8', 
 	desc=None, verbose=False, **kwargs):
 	"""Converts a string or list of characters into a one-hot encoding.
 
@@ -29,15 +30,12 @@ def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8',
 	sequence : str or list
 		The sequence to convert to a one-hot encoding.
 
-	ignore : str, optional
-		A character to indicate setting nothing to 1 for that row, keeping the
-		encoding entirely 0's for that row. In the context of genomics, this is
-		the N character. Default is 'N'.
-
-	alphabet : set or tuple or list, optional
-		A pre-defined alphabet. If None is passed in, the alphabet will be
-		determined from the sequence, but this may be time consuming for
-		large sequences. Default is None.
+	alphabet : set or tuple or list
+		A pre-defined alphabet where the ordering of the symbols is the same
+		as the index into the returned tensor, i.e., for the alphabet ['A', 'B']
+		the returned tensor will have a 1 at index 0 if the character was 'A'.
+		Characters outside the alphabet are ignored and none of the indexes are
+		set to 1. Default is ['A', 'C', 'G', 'T'].
 
 	dtype : str or numpy.dtype, optional
 		The data type of the returned encoding. Default is int8.
@@ -65,17 +63,16 @@ def one_hot_encode(sequence, ignore='N', alphabet=None, dtype='int8',
 	if isinstance(sequence, str):
 		sequence = list(sequence)
 
-	alphabet = alphabet or numpy.unique(sequence)
-	alphabet = [char for char in alphabet if char != ignore]
 	alphabet_lookup = {char: i for i, char in enumerate(alphabet)}
 
 	ohe = numpy.zeros((len(sequence), len(alphabet)), dtype=dtype)
 	for i, char in tqdm(enumerate(sequence), disable=d, desc=desc, **kwargs):
-		if char != ignore:
-			idx = alphabet_lookup[char]
+		idx = alphabet_lookup.get(char, -1)
+		if idx != -1:
 			ohe[i, idx] = 1
 
 	return ohe
+
 
 class DataGenerator(torch.utils.data.Dataset):
 	"""A data generator for BPNet inputs.
@@ -163,8 +160,9 @@ class DataGenerator(torch.utils.data.Dataset):
 
 		return X, y
 
+
 def extract_loci(loci, sequences, signals=None, controls=None, chroms=None, 
-	in_window=2114, out_window=1000, max_jitter=128, min_counts=None,
+	in_window=2114, out_window=1000, max_jitter=0, min_counts=None,
 	max_counts=None, n_loci=None, verbose=False):
 	"""Extract sequences and signals at coordinates from a locus file.
 
@@ -220,7 +218,7 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 
 	max_jitter: int, optional
 		The maximum amount of jitter to add, in either direction, to the
-		midpoints that are passed in. Default is 128.
+		midpoints that are passed in. Default is 0.
 
 	min_counts: float or None, optional
 		The minimum number of counts, summed across the length of each example

@@ -59,7 +59,6 @@ def marginalize(model, motif, X):
 		
 	y_before_profile, y_before_counts = model.predict(X, X_ctl)
 	y_before_profile = torch.nn.functional.softmax(y_before_profile, dim=-1)
-	#y_before = y_before_profile * y_before_counts.unsqueeze(-1)
 
 	attr_before = calculate_attributions(model, X, args=args, n_shuffles=10)
 
@@ -74,7 +73,6 @@ def marginalize(model, motif, X):
 
 	y_after_profile, y_after_counts = model.predict(X_perturb, X_ctl)
 	y_after_profile = torch.nn.functional.softmax(y_after_profile, dim=-1)
-	#y_after = y_after_profile * y_after_counts.unsqueeze(-1)
 
 	attr_after = calculate_attributions(model, X_perturb, args=args, 
 		n_shuffles=10)
@@ -249,4 +247,3 @@ def marginalization_report(model, motifs, sequences, output_dir):
 	results_df = pandas.DataFrame(results)
 	results_df.to_html(open('marginalization.html'.format(output_dir), 'w'),
 		escape=False, formatters=formatters, index=False)
-
