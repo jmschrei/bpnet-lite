@@ -348,7 +348,7 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 			seq = sequences[chrom][start:end].T
 		else:
 			seq = one_hot_encode(sequences[chrom][start:end].seq.upper(), 
-				alphabet=['A', 'C', 'G', 'T', 'N']).T
+				alphabet=['A', 'C', 'G', 'T']).T
 		
 		seqs.append(seq)
 		loci_count += 1

@@ -64,12 +64,9 @@ marginalize_parser.add_argument("-p", "--parameters", type=str, required=True,
 default_fit_parameters = {
 	'n_filters': 64,
 	'n_layers': 8,
-	'n_outputs': 2,
-	'n_control_tracks': 2,
 	'profile_output_bias': True,
 	'count_output_bias': True,
 	'name': None,
-
 	'batch_size': 64,
 	'in_window': 2114,
 	'out_window': 1000,
@@ -236,16 +233,18 @@ if args.cmd == "fit":
 
 	if parameters['controls'] is not None:
 		valid_sequences, valid_signals, valid_controls = valid_data
+		n_control_tracks = 2
 	else:
 		valid_sequences, valid_signals = valid_data
 		valid_controls = None
+		n_control_tracks = 0
 
 	trimming = (parameters['in_window'] - parameters['out_window']) // 2
 
 	model = BPNet(n_filters=parameters['n_filters'], 
 		n_layers=parameters['n_layers'],
-		n_outputs=parameters['n_outputs'],
-		n_control_tracks=parameters['n_control_tracks'],
+		n_outputs=len(parameters['signals']),
+		n_control_tracks=n_control_tracks,
 		profile_output_bias=parameters['profile_output_bias'],
 		count_output_bias=parameters['count_output_bias'],
 		alpha=parameters['alpha'],

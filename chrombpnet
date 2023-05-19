@@ -180,12 +180,11 @@ if args.cmd == "fit":
 	accessibility = BPNet(n_filters=parameters['n_filters'], 
 		n_layers=parameters['n_layers'], n_control_tracks=0, n_outputs=1,
 		alpha=parameters['alpha'],
+		name=parameters['name'] + '.accessibility',
 		trimming=trimming).cuda()
 
 	model = ChromBPNet(bias=bias, accessibility=accessibility,
-		name="chrombpnet.{}.{}".format(parameters['n_filters'], 
-			parameters['n_layers']))
-
+		name=parameters['name'])
 
 	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
 
@@ -283,8 +282,7 @@ elif args.cmd == 'bias':
 	model = BPNet(n_filters=parameters['n_filters'], 
 		n_layers=parameters['n_layers'], n_outputs=1, n_control_tracks=0,
 		alpha=parameters['alpha'], 
-		name='bias.{}.{}'.format(parameters['n_filters'], 
-			parameters['n_layers']),
+		name=parameters['name'],
 		trimming=trimming).cuda()
 
 	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
