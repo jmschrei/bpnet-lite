@@ -63,7 +63,7 @@ def marginalize(model, motif, X):
 	attr_before = calculate_attributions(model, X, args=args, n_shuffles=10)
 
 	X_perturb = torch.clone(X)
-	motif_ohe = one_hot_encode(motif, alphabet=['A', 'C', 'G', 'T', 'N'])
+	motif_ohe = one_hot_encode(motif, alphabet=['A', 'C', 'G', 'T'])
 	motif_ohe = torch.from_numpy(motif_ohe)
 
 	start = X.shape[-1] // 2 - len(motif) // 2
@@ -132,7 +132,7 @@ def _plot_attributions(y, ylim, path, figsize=(10,3), **kwargs):
 	plt.close()
 
 
-def marginalization_report(model, motifs, sequences, output_dir):
+def marginalization_report(model, motifs, sequences, output_dir, minimal=False):
 	motifs = list(read_meme(motifs).items())
 
 	if not os.path.isdir(output_dir):
@@ -205,20 +205,22 @@ def marginalization_report(model, motifs, sequences, output_dir):
 		name, pwm = motifs[idx]
 		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=1)])
 
-		_plot_profiles(prof_before[idx], prof_before_ylim, color='0.5', 
-			path=(output_dir + name + ".profile.before.png"))
-		_plot_profiles(prof_after[idx], prof_after_ylim, color='0.5', 
-			path=(output_dir + name + ".profile.after.png"))
+		if not minimal:
+			_plot_profiles(prof_before[idx], prof_before_ylim, color='0.5', 
+				path=(output_dir + name + ".profile.before.png"))
+			_plot_profiles(prof_after[idx], prof_after_ylim, color='0.5', 
+				path=(output_dir + name + ".profile.after.png"))
 		_plot_profiles(prof_diff[idx], prof_diff_ylim, color='c', 
 			path=(output_dir + name + ".profile.diff.png"))
 
 		_plot_counts(counts_before[idx], counts_after[idx], counts_xlim, 
 			counts_ylim, color='m', path=(output_dir + name + ".counts.png"))
 
-		_plot_attributions(attr_before[idx], attr_before_ylim, 
-			path=(output_dir + name + ".attr.before.png"))
-		_plot_attributions(attr_after[idx], attr_after_ylim, 
-			path=(output_dir + name + ".attr.after.png"))
+		if not minimal:
+			_plot_attributions(attr_before[idx], attr_before_ylim, 
+				path=(output_dir + name + ".attr.before.png"))
+			_plot_attributions(attr_after[idx], attr_after_ylim, 
+				path=(output_dir + name + ".attr.after.png"))
 		_plot_attributions(attr_diff[idx], attr_diff_ylim, 
 			path=(output_dir + name + ".attr.diff.png"))
 
@@ -245,5 +247,9 @@ def marginalization_report(model, motifs, sequences, output_dir):
 		if name not in ('name', 'sequence')}
 
 	results_df = pandas.DataFrame(results)
-	results_df.to_html(open('marginalization.html'.format(output_dir), 'w'),
+	if minimal:
+		results_df = results_df[['name', 'sequence', 'profile (diff)', 
+			'counts', 'attributions (diff)']]
+
+	results_df.to_html(open('{}/marginalization.html'.format(output_dir), 'w'),
 		escape=False, formatters=formatters, index=False)

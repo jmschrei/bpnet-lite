@@ -28,9 +28,12 @@ desc = """BPNet is an neural network primarily composed of dilated residual
 	files for the signal to predict and the control signal, and train a
 	BPNet model for you."""
 
+_help = """Must be either 'negatives', 'fit', 'predict', 'interpret',
+	'marginalize', or 'pipeline'."""
+
 # Read in the arguments
 parser = argparse.ArgumentParser(description=desc)
-subparsers = parser.add_subparsers(help="Must be either 'negatives', 'fit', 'predict', 'interpret', or 'marginalize'.", required=True, dest='cmd')
+subparsers = parser.add_subparsers(help=_help, required=True, dest='cmd')
 
 negatives_parser = subparsers.add_parser("negatives", help="Sample GC-matched negatives.")
 negatives_parser.add_argument("-i", "--peaks", required=True, help="Peak bed file.")
@@ -57,6 +60,10 @@ marginalize_parser = subparsers.add_parser("marginalize", help="Run marginalizat
 marginalize_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
+pipeline_parser = subparsers.add_parser("pipeline", help="Run each step on the given files.")
+pipeline_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters used for each step.")
+
 ###
 # Default Parameters
 ###
@@ -72,7 +79,7 @@ default_fit_parameters = {
 	'out_window': 1000,
 	'max_jitter': 128,
 	'reverse_complement': True,
-	'max_epochs': 250,
+	'max_epochs': 50,
 	'validation_iter': 100,
 	'lr': 0.001,
 	'alpha': 1,
@@ -81,10 +88,10 @@ default_fit_parameters = {
 	'min_counts': 0,
 	'max_counts': 99999999,
 
-	'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
-	'validation_chroms': ['chr4', 'chr15', 'chr21'],
+	'training_chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
+		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+	'validation_chroms': ['chr8', 'chr10'],
 	'sequences': None,
 	'loci': None,
 	'signals': None,
@@ -97,15 +104,15 @@ default_predict_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
+	'chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
+		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
 	'sequences': None,
 	'loci': None,
 	'controls': None,
 	'model': None,
 	'profile_filename': 'y_profile.npz',
-	'count_filename': 'y_count.npz'
+	'counts_filename': 'y_counts.npz'
 }
 
 default_interpret_parameters = {
@@ -113,16 +120,17 @@ default_interpret_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
+	'chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
+		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
 	'sequences': None,
 	'loci': None,
 	'model': None,
-	'output': 'count',
+	'output': 'profile',
 	'ohe_filename': 'ohe.npz',
-	'shap_filename': 'shap.npz',
-	'random_state':0,
+	'attr_filename': 'attr.npz',
+	'n_shuffles':20,
+	'random_state':0
 }
 
 default_marginalize_parameters = {
@@ -141,6 +149,61 @@ default_marginalize_parameters = {
 	'model': None,
 	'output_filename':'marginalize/',
 	'random_state':0,
+	'minimal': True
+}
+
+default_pipeline_parameters = {
+	# Model architecture parameters
+	'n_filters': 64,
+	'n_layers': 8,
+	'profile_output_bias': True,
+	'count_output_bias': True,
+	'in_window': 2114,
+	'out_window': 1000,
+	'name': None,
+	'model': None,
+
+	# Data parameters
+	'batch_size': 64,
+	'max_jitter': 128,
+	'reverse_complement': True,
+	'max_epochs': 50,
+	'validation_iter': 100,
+	'lr': 0.001,
+	'alpha': 1,
+	'verbose': False,
+	'min_counts': 0,
+	'max_counts': 99999999,
+	'training_chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
+		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+	'validation_chroms': ['chr8', 'chr10'],
+	'random_state': None,
+
+	# Input file parameters
+	'sequences': None,
+	'loci': None,
+	'negatives': None,
+	'signals': None,
+	'controls': None,
+
+	# Output file parameters
+	'profile_filename': None,
+	'counts_filename': None,
+
+	'output': 'profile',
+	'ohe_filename': None,
+	'attr_filename': None,
+	'n_shuffles':20,
+
+	'n_seqlets': 100000,
+	'modisco_filename': None,
+
+	'motifs': None,
+	'n_loci': None,
+	'shuffle': False,
+	'marginalization_filename': None,
+	'minimal': True
 }
 
 ###
@@ -309,11 +372,12 @@ elif args.cmd == 'interpret':
 
 	X_attr = calculate_attributions(model, X, args=X_ctl,
 		model_output=parameters['output'], hypothetical=True, 
+		n_shuffles=parameters['n_shuffles'], 
 		random_state=parameters['random_state'],
 		verbose=parameters['verbose'])
 
 	numpy.savez_compressed(parameters['ohe_filename'], X)
-	numpy.savez_compressed(parameters['shap_filename'], X_attr)
+	numpy.savez_compressed(parameters['attr_filename'], X_attr)
 
 # Marginalize motifs
 elif args.cmd == 'marginalize':
@@ -340,4 +404,101 @@ elif args.cmd == 'marginalize':
 		X = X[:parameters['n_loci']]
 
 	marginalization_report(model, parameters['motifs'], X, 
-		parameters['output_filename'])
+		parameters['output_filename'], minimal=parameters['minimal'])
+
+elif args.cmd == 'pipeline':
+	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
+
+	# Step 1: Fit a BPNet model to the provided data
+	loci = parameters['loci']
+	loci = loci if isinstance(loci, list) else [loci]
+	negatives = parameters['negatives']
+	negatives = negatives if isinstance(negatives, list) else [negatives]
+
+	fit_parameters = {key: parameters[key] for key in default_fit_parameters}
+	fit_parameters['loci'] = loci + negatives
+
+	if parameters['model'] is None:
+		name = '{}.bpnet.fit.json'.format(parameters['name'])
+
+		with open(name, 'w'):
+			json.dumps(fit_parameters)
+
+		os.system("bpnet fit -p {}".format(name))
+
+	
+	# Step 2: Make predictions for the entire validation set
+	predict_parameters = {key: parameters[key] for key in 
+		default_predict_parameters if key in parameters}
+	predict_parameters['chroms'] = parameters['validation_chroms']
+
+	if parameters['profile_filename'] is None:
+		predict_parameters['profile_filename'] = '{}.y_profiles.npz'.format(
+			parameters['name'])
+
+	if parameters['counts_filename'] is None:
+		predict_parameters['counts_filename'] = '{}.y_counts.npz'.format(
+			parameters['name'])
+
+	name = '{}.bpnet.predict.json'.format(parameters['name'])
+
+	with open(name, 'w'):
+		json.dumps(predict_parameters)
+
+	os.system("bpnet predict -p {}".format(name))
+
+	
+	# Step 3: Interpret the validation set
+	interpret_parameters = {key: parameters[key] for key in 
+		default_interpret_parameters if key in parameters}
+	interpret_parameters['chroms'] = parameters['validation_chroms']
+
+	if interpret_parameters['ohe_filename'] is None:
+		interpret_parameters['ohe_filename'] = '{}.ohe.npz'.format(
+			parameters['name'])
+
+	if interpret_parameters['attr_filename'] is None:
+		interpret_parameters['attr_filename'] = '{}.attr.npz'.format(
+			parameters['name'])
+
+
+	name = '{}.bpnet.interpret.json'.format(parameters['name'])
+
+	with open(name, 'w'):
+		json.dumps(interpret_parameters)
+
+	os.system("bpnet interpret -p {}".format(name))
+
+
+	# Step 4: Calculate tf-modisco motifs
+	cmd = "modisco motifs -s {} -a {} -n {}".format(
+		interpret_parameters['ohe_filename'], 
+		interpret_parameters['attr_filename'],
+		parameters['n_seqlets'])
+	if parameters['verbose']:
+		cmd += ' -v'
+
+	os.system(cmd)
+	os.system("mv modisco_results.h5 {}_modisco_results.h5".format(
+		parameters['name']))
+
+
+	# Step 5: Generate the tf-modisco report
+	os.system('modisco report -i {0}_modisco_results.h5 -o {1} -s {1}'.format(
+		parameters['name'], parameters['modisco_filename']))
+	
+
+	# Step 6: Marginalization experiments
+	marginalize_parameters = {key: parameters[key] for key in 
+		default_marginalize_parameters if key in parameters}
+	marginalize_parameters['chroms'] = parameters['validation_chroms']
+	marginalize_parameters['loci'] = parameters['negatives']
+	marginalize_parameters['output_filename'] = parameters['marginalization_filename']
+
+	name = '{}.bpnet.marginalize.json'.format(parameters['name'])
+
+	with open(name, 'w'):
+		json.dumps(marginalize_parameters)
+
+	os.system("bpnet marginalize -p {}".format(name))
+

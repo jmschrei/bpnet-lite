@@ -3,12 +3,16 @@
    "in_window":2114,
    "out_window":1000,
    "verbose":true,
-   "chroms":[
-      "chr4",
-      "chr15",
-      "chr21"
-   ],
+   "chroms":["chr8", "chr10"],
+   "model":"bpnet.64.8.torch",
+
    "sequences":"../../oak/common/hg38/hg38.fa",
    "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
-   "model":"bpnet.64.8.torch"
+   "controls": [
+      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig", 
+      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig"
+   ],
+
+   "profile_filename": "y_profile.npz",
+   "counts_filename": "y_counts.npz"
 }
