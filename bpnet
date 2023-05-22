@@ -2,6 +2,7 @@
 # BPNet command-line tool
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
+import os
 import sys
 import numpy
 import torch
@@ -350,7 +351,7 @@ elif args.cmd == 'predict':
 		batch_size=parameters['batch_size'])
 
 	numpy.savez_compressed(parameters['profile_filename'], y_profiles)
-	numpy.savez_compressed(parameters['count_filename'], y_counts)
+	numpy.savez_compressed(parameters['counts_filename'], y_counts)
 
 elif args.cmd == 'interpret':
 	parameters = merge_parameters(args.parameters, default_interpret_parameters)
@@ -410,6 +411,9 @@ elif args.cmd == 'pipeline':
 	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
 
 	# Step 1: Fit a BPNet model to the provided data
+	if parameters['verbose']:
+		print("Step 1: Fitting a BPNet model")
+
 	loci = parameters['loci']
 	loci = loci if isinstance(loci, list) else [loci]
 	negatives = parameters['negatives']
@@ -420,17 +424,22 @@ elif args.cmd == 'pipeline':
 
 	if parameters['model'] is None:
 		name = '{}.bpnet.fit.json'.format(parameters['name'])
+		parameters['model'] = parameters['name'] + '.torch'
 
-		with open(name, 'w'):
-			json.dumps(fit_parameters)
+		with open(name, 'w') as outfile:
+			outfile.write(json.dumps(fit_parameters, sort_keys=True, indent=4))
 
 		os.system("bpnet fit -p {}".format(name))
 
 	
 	# Step 2: Make predictions for the entire validation set
+	if parameters['verbose']:
+		print("\nStep 2: Making predictions")
+
 	predict_parameters = {key: parameters[key] for key in 
 		default_predict_parameters if key in parameters}
 	predict_parameters['chroms'] = parameters['validation_chroms']
+	predict_parameters['model'] = parameters['model']
 
 	if parameters['profile_filename'] is None:
 		predict_parameters['profile_filename'] = '{}.y_profiles.npz'.format(
@@ -441,17 +450,20 @@ elif args.cmd == 'pipeline':
 			parameters['name'])
 
 	name = '{}.bpnet.predict.json'.format(parameters['name'])
-
-	with open(name, 'w'):
-		json.dumps(predict_parameters)
+	with open(name, 'w') as outfile:
+		outfile.write(json.dumps(predict_parameters, sort_keys=True, indent=4))
 
 	os.system("bpnet predict -p {}".format(name))
 
 	
 	# Step 3: Interpret the validation set
+	if parameters['verbose']:
+		print("\nStep 3: Calculating attributions")
+
 	interpret_parameters = {key: parameters[key] for key in 
 		default_interpret_parameters if key in parameters}
 	interpret_parameters['chroms'] = parameters['validation_chroms']
+	interpret_parameters['model'] = parameters['model']
 
 	if interpret_parameters['ohe_filename'] is None:
 		interpret_parameters['ohe_filename'] = '{}.ohe.npz'.format(
@@ -461,16 +473,18 @@ elif args.cmd == 'pipeline':
 		interpret_parameters['attr_filename'] = '{}.attr.npz'.format(
 			parameters['name'])
 
-
 	name = '{}.bpnet.interpret.json'.format(parameters['name'])
-
-	with open(name, 'w'):
-		json.dumps(interpret_parameters)
+	with open(name, 'w') as outfile:
+		outfile.write(json.dumps(interpret_parameters, sort_keys=True, 
+			indent=4))
 
 	os.system("bpnet interpret -p {}".format(name))
 
 
 	# Step 4: Calculate tf-modisco motifs
+	if parameters['verbose']:
+		print("\nStep 4: TF-MoDISco motifs")
+
 	cmd = "modisco motifs -s {} -a {} -n {}".format(
 		interpret_parameters['ohe_filename'], 
 		interpret_parameters['attr_filename'],
@@ -478,27 +492,42 @@ elif args.cmd == 'pipeline':
 	if parameters['verbose']:
 		cmd += ' -v'
 
+	modisco_name = "{}_modisco_results.h5".format(parameters['name'])
 	os.system(cmd)
-	os.system("mv modisco_results.h5 {}_modisco_results.h5".format(
-		parameters['name']))
+	os.system("mv modisco_results.h5 {}".format(modisco_name))
 
 
 	# Step 5: Generate the tf-modisco report
-	os.system('modisco report -i {0}_modisco_results.h5 -o {1} -s {1}'.format(
-		parameters['name'], parameters['modisco_filename']))
+	if parameters['verbose']:
+		print("\nStep 5: TF-MoDISco reports")
+
+	if parameters['modisco_filename'] is None:
+		parameters['modisco_filename'] = '{}_modisco/'.format(
+			parameters['name'])
+
+	os.system('modisco report -i {0} -o {1} -s {1} -m {2}'.format(modisco_name, 
+		parameters['modisco_filename'], parameters['motifs']))
 	
 
 	# Step 6: Marginalization experiments
+	if parameters['verbose']:
+		print("\nStep 6: Run marginalizations")
+
 	marginalize_parameters = {key: parameters[key] for key in 
 		default_marginalize_parameters if key in parameters}
 	marginalize_parameters['chroms'] = parameters['validation_chroms']
 	marginalize_parameters['loci'] = parameters['negatives']
 	marginalize_parameters['output_filename'] = parameters['marginalization_filename']
 
+	if marginalize_parameters['output_filename'] is None:
+		marginalize_parameters['output_filename'] = '{}_marginalize/'.format(
+			parameters['name'])
+
 	name = '{}.bpnet.marginalize.json'.format(parameters['name'])
 
-	with open(name, 'w'):
-		json.dumps(marginalize_parameters)
+	with open(name, 'w') as outfile:
+		outfile.write(json.dumps(marginalize_parameters, sort_keys=True, 
+			indent=4))
 
 	os.system("bpnet marginalize -p {}".format(name))
 
