@@ -49,7 +49,7 @@ def marginalize(model, motif, X):
 	if isinstance(X, numpy.ndarray):
 		X = torch.from_numpy(X)
 
-	if model.n_control_tracks > 0:
+	if hasattr(model, "n_control_tracks") and model.n_control_tracks > 0:
 		X_ctl = torch.zeros(X.shape[0], model.n_control_tracks, X.shape[-1],
 			dtype=torch.float32)
 		args = (X_ctl,)
@@ -100,10 +100,11 @@ def _plot_profiles(y, ylim, color, path, figsize=(10,3)):
 
 
 def _plot_counts(y_before, y_after, xlim, ylim, color, path, figsize=(10,3)):
-	z = max(xlim[1], ylim[1])
+	zmax = max(xlim[1], ylim[1])
+	zmin = min(xlim[0], ylim[0])
 
 	plt.figure(figsize=figsize)
-	plt.plot([0, z], [0, z], color='0.5')
+	plt.plot([zmin, zmax], [zmin, zmax], color='0.5')
 	plt.scatter(y_before, y_after, color=color, s=5)
 
 	seaborn.despine()

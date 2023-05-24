@@ -2,6 +2,7 @@
 # ChromBPNet command-line tool
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
+import os
 import sys
 import numpy
 import torch
@@ -13,6 +14,7 @@ from bpnetlite.chrombpnet import ChromBPNet
 from bpnetlite.io import PeakGenerator
 from bpnetlite.io import extract_loci
 from bpnetlite.attributions import calculate_attributions
+from bpnetlite.marginalize import marginalization_report
 
 import json
 
@@ -27,18 +29,32 @@ desc = """ChromBPNet is a neural network that builds off the original BPNet
 	After training, the accessibility model can be used using the `bpnet`
 	tool."""
 
+_help = """Must be either 'fit', 'predict', 'interpret', 'marginalize', 
+	or 'pipeline'."""
 
 # Read in the arguments
 parser = argparse.ArgumentParser(description=desc)
-subparsers = parser.add_subparsers(help="Must be either 'bias' or 'fit' or 'predict'.", required=True, dest='cmd')
+subparsers = parser.add_subparsers(help=_help, required=True, dest='cmd')
 
-fit_parser = subparsers.add_parser("fit", help="Fit a ChromBPNet model.")
-fit_parser.add_argument("-p", "--parameters", type=str, required=True,
-	help="A JSON file containing the parameters for training the model.")
+train_parser = subparsers.add_parser("fit", help="Fit a BPNet model.")
+train_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters for fitting the model.")
 
-predict_parser = subparsers.add_parser("predict", help="Make predictions using a trained ChromBPNet model.")
+predict_parser = subparsers.add_parser("predict", help="Make predictions using a trained BPNet model.")
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
+
+interpret_parser = subparsers.add_parser("interpret", help="Make interpretations using a trained BPNet model.")
+interpret_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters for calculating attributions.")
+
+marginalize_parser = subparsers.add_parser("marginalize", help="Run marginalizations given motifs.")
+marginalize_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters for calculating attributions.")
+
+pipeline_parser = subparsers.add_parser("pipeline", help="Run each step on the given files.")
+pipeline_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters used for each step.")
 
 bias_parser = subparsers.add_parser("bias", help="Fit a bias model.")
 bias_parser.add_argument("-p", "--parameters", type=str, required=True,
@@ -51,30 +67,35 @@ bias_parser.add_argument("-p", "--parameters", type=str, required=True,
 default_fit_parameters = {
 	'n_filters': 64,
 	'n_layers': 8,
+	'profile_output_bias': True,
+	'count_output_bias': True,
+	'name': None,
 	'batch_size': 64,
 	'in_window': 2114,
 	'out_window': 1000,
 	'max_jitter': 128,
 	'reverse_complement': True,
-	'max_epochs': 250,
+	'max_epochs': 50,
 	'validation_iter': 100,
 	'lr': 0.001,
-	'alpha': 1,
+	'alpha': 10,
+	'beta': 0.5,
 	'verbose': False,
-
-	'min_counts': 0,
-	'max_counts': 99999999,
 	'bias_model': None,
 
-	'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
-	'validation_chroms': ['chr4', 'chr15', 'chr21'],
+	'min_counts': None,
+	'max_counts': None,
+
+	'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
+		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+	'validation_chroms': ['chr8', 'chr10'],
 	'sequences': None,
 	'loci': None,
+	'negatives': None,
 	'signals': None,
+	'controls': None,
 	'random_state': None
-
 }
 
 default_predict_parameters = {
@@ -82,65 +103,156 @@ default_predict_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
+	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
+		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
+		'chr20', 'chr21', 'chr22', 'chrX'],
+	'sequences': None,
+	'loci': None,
+	'controls': None,
+	'model': None,
+	'profile_filename': 'y_profile.npz',
+	'counts_filename': 'y_counts.npz'
+}
+
+default_interpret_parameters = {
+	'batch_size': 1,
+	'in_window': 2114,
+	'out_window': 1000,
+	'verbose': False,
+	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
+		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
+		'chr20', 'chr21', 'chr22', 'chrX'],
 	'sequences': None,
 	'loci': None,
 	'model': None,
-	'profile_filename': 'y_profile.npz',
-	'count_filename': 'y_count.npz'
+	'output': 'profile',
+	'ohe_filename': 'ohe.npz',
+	'attr_filename': 'attr.npz',
+	'n_shuffles':20,
+	'random_state':0
 }
 
-default_bias_parameters = {
-	'n_filters': 256,
-	'n_layers': 4,
+default_marginalize_parameters = {
 	'batch_size': 64,
 	'in_window': 2114,
 	'out_window': 1000,
+	'verbose': False,
+	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
+		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
+		'chr20', 'chr21', 'chr22', 'chrX'],
+	'sequences': None,
+	'motifs': None,
+	'loci': None,
+	'n_loci': None,
+	'shuffle': False,
+	'model': None,
+	'output_filename':'marginalize/',
+	'random_state':0,
+	'minimal': True
+}
+
+default_pipeline_parameters = {
+	# Model architecture parameters
+	'n_filters': 64,
+	'n_layers': 8,
+	'profile_output_bias': True,
+	'count_output_bias': True,
+	'in_window': 2114,
+	'out_window': 1000,
+	'name': None,
+	'model': None,
+	'bias_model': None,
+	'accessibility_model': None,
+
+	# Data parameters
+	'batch_size': 64,
 	'max_jitter': 128,
 	'reverse_complement': True,
-	'max_epochs': 250,
+	'max_epochs': 50,
 	'validation_iter': 100,
 	'lr': 0.001,
-	'early_stopping': None,
 	'alpha': 1,
-	'beta': 0.5,
 	'verbose': False,
-
 	'min_counts': 0,
-	'max_counts': None,
+	'max_counts': 99999999,
+	'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
+		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+	'validation_chroms': ['chr8', 'chr10'],
+	'random_state': None,
 
-	'training_chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
-	'validation_chroms': ['chr4', 'chr15', 'chr21'],
+	# Input file parameters
 	'sequences': None,
-	'peaks': None,
+	'loci': None,
 	'negatives': None,
 	'signals': None,
-	'random_state': None
+	'controls': None,
 
+	# Output file parameters
+	'profile_filename': None,
+	'counts_filename': None,
+
+	'output': 'profile',
+	'ohe_filename': None,
+	'attr_filename': None,
+	'n_shuffles':20,
+
+	'n_seqlets': 100000,
+	'modisco_filename': None,
+
+	'motifs': None,
+	'n_loci': None,
+	'shuffle': False,
+	'marginalization_filename': None,
+	'minimal': True
 }
+
 
 ###
 # Commands
 ###
+
+
+def merge_parameters(parameters, default_parameters):
+	"""Merge the provided parameters with the default parameters.
+
+	
+	Parameters
+	----------
+	parameters: str
+		Name of the JSON folder with the provided parameters
+
+	default_parameters: dict
+		The default parameters for the operation.
+
+
+	Returns
+	-------
+	params: dict
+		The merged set of parameters.
+	"""
+
+	with open(parameters, "r") as infile:
+		parameters = json.load(infile)
+
+	optional = ['controls', 'bias_model', 'min_counts', 'max_counts']
+
+	for parameter, value in default_parameters.items():
+		if parameter not in parameters:
+			if value is None and parameter not in optional:
+				raise ValueError("Must provide value for '{}'".format(parameter))
+
+			parameters[parameter] = value
+
+	return parameters
+
 
 # Pull the arguments
 args = parser.parse_args()
 
 # Fit ChromBPNet model
 if args.cmd == "fit":
-	with open(args.parameters, "r") as infile:
-		parameters = json.load(infile)
-
-	for parameter, value in default_fit_parameters.items():
-		if parameter not in parameters:
-			if value is None:
-				raise ValueError("Must provide value for '{}'".format(parameter))
-
-			parameters[parameter] = value
+	parameters = merge_parameters(args.parameters, default_fit_parameters)
 
 	###
 
@@ -148,7 +260,7 @@ if args.cmd == "fit":
 		loci=parameters['loci'], 
 		sequences=parameters['sequences'],
 		signals=parameters['signals'],
-		controls=None,
+		controls=parameters['controls'],
 		chroms=parameters['training_chroms'],
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
@@ -161,6 +273,43 @@ if args.cmd == "fit":
 		verbose=parameters['verbose']
 	)
 
+	trimming = (parameters['in_window'] - parameters['out_window']) // 2
+
+	if parameters['bias_model'] is None:
+		bias_fit_parameters = {key: parameters[key] for key in 
+			default_fit_parameters}
+		bias_fit_parameters['loci'] = parameters['negatives']
+
+		min_counts = training_data.dataset.signals.sum(dim=(1, 2)).min().item()
+			
+		name = '{}.chrombpnet.bias.fit.json'.format(parameters['name'])
+		bias_fit_parameters['max_counts'] = min_counts * parameters['beta']
+		bias_fit_parameters['name'] = parameters['name'] + '.bias'
+		parameters['bias_model'] = bias_fit_parameters['name'] + '.torch'
+
+		with open(name, 'w') as outfile:
+			outfile.write(json.dumps(bias_fit_parameters, sort_keys=True, 
+				indent=4))
+
+		os.system("bpnet fit -p {}".format(name))
+
+	if parameters['negatives'] is not None:
+		training_data = PeakGenerator(
+			loci=[parameters['loci'], parameters['negatives']], 
+			sequences=parameters['sequences'],
+			signals=parameters['signals'],
+			controls=parameters['controls'],
+			chroms=parameters['training_chroms'],
+			in_window=parameters['in_window'],
+			out_window=parameters['out_window'],
+			max_jitter=parameters['max_jitter'],
+			reverse_complement=parameters['reverse_complement'],
+			min_counts=parameters['min_counts'],
+			max_counts=parameters['max_counts'],
+			random_state=parameters['random_state'],
+			batch_size=parameters['batch_size'],
+			verbose=parameters['verbose']
+		)
 
 	valid_sequences, valid_signals = extract_loci(
 		sequences=parameters['sequences'],
@@ -173,8 +322,6 @@ if args.cmd == "fit":
 		max_jitter=0,
 		verbose=parameters['verbose']
 	)
-
-	trimming = (parameters['in_window'] - parameters['out_window']) // 2
 
 	bias = torch.load(parameters['bias_model'], map_location='cpu').cuda().eval()
 	accessibility = BPNet(n_filters=parameters['n_filters'], 
@@ -188,107 +335,86 @@ if args.cmd == "fit":
 
 	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
 
-	model.fit_generator(training_data, optimizer, X_valid=valid_sequences, 
+	model.fit(training_data, optimizer, X_valid=valid_sequences, 
 		y_valid=valid_signals, max_epochs=parameters['max_epochs'], 
 		validation_iter=parameters['validation_iter'], 
 		batch_size=parameters['batch_size'])
 
+
 # Make predictions from the full ChromBPNet model
 elif args.cmd == 'predict':
-	with open(args.parameters, "r") as infile:
-		parameters = json.load(infile)
+	os.system("bpnet predict -p {}".format(args.parameters))
 
-	for parameter, value in default_predict_parameters.items():
-		if parameter not in parameters:
-			if value is None:
-				raise ValueError("Must provide value for '{}'".format(parameter))
 
-			parameters[parameter] = value
+# Make interpretations from the full ChromBPNet model
+elif args.cmd == 'interpret':
+	os.system("bpnet interpret -p {}".format(args.parameters))
 
-	model = torch.load(parameters['model']).cuda()
 
-	X = extract_loci(
-		sequences=parameters['sequences'],
-		loci=parameters['loci'],
-		chroms=parameters['chroms'],
-		max_jitter=0,
-		verbose=parameters['verbose']
-	).cuda()
+# Marginalize motifs
+elif args.cmd == 'marginalize':
+	os.system("bpnet marginalize -p {}".format(args.parameters))
 
-	y_profiles, y_counts = model.predict(X, batch_size=parameters['batch_size'])
 
-	numpy.savez_compressed(parameters['profile_filename'], y_profiles)
-	numpy.savez_compressed(parameters['count_filename'], y_counts)
+# Run everything for ChromBPNet
+elif args.cmd == 'pipeline':
+	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
+	model_name = parameters['name']
 
-# Fit the bias model
-elif args.cmd == 'bias':
-	with open(args.parameters, "r") as infile:
-		parameters = json.load(infile)
+	# Step 1: Fit a BPNet model to the provided data
+	if parameters['verbose']:
+		print("Step 1: Fitting a ChromBPNet model")
 
-	for parameter, value in default_bias_parameters.items():
-		if parameter not in parameters:
-			if parameter != 'max_counts' and value is None:
-				raise ValueError("Must provide value for '{}'".format(parameter))
+	if parameters['model'] is None:
+		name = '{}.chrombpnet.fit.json'.format(parameters['name'])
+		parameters['model'] = parameters['name'] + '.torch'
 
-			parameters[parameter] = value
+		fit_parameters = {key: parameters[key] for key in 
+			default_fit_parameters}
 
-	###
+		with open(name, 'w') as outfile:
+			outfile.write(json.dumps(fit_parameters, sort_keys=True, indent=4))
 
-	if parameters['max_counts'] is None:
-		_, train_signals = extract_loci(
-			sequences=parameters['sequences'],
-			signals=parameters['signals'],
-			controls=None,
-			loci=parameters['peaks'],
-			chroms=parameters['training_chroms'],
-			in_window=parameters['in_window'],
-			out_window=parameters['out_window'],
-			max_jitter=0,
-			verbose=parameters['verbose']
-		)
+		os.system("chrombpnet fit -p {}".format(name))
 
-		parameters['max_counts'] = train_signals.sum(dim=-1).min()
 
-	training_data = PeakGenerator(
-		loci=parameters['negatives'], 
-		sequences=parameters['sequences'],
-		signals=parameters['signals'],
-		chroms=parameters['training_chroms'],
-		in_window=parameters['in_window'],
-		out_window=parameters['out_window'],
-		max_jitter=parameters['max_jitter'],
-		reverse_complement=parameters['reverse_complement'],
-		min_counts=parameters['min_counts'],
-		max_counts=parameters['max_counts']*parameters['beta'],
-		random_state=parameters['random_state'],
-		batch_size=parameters['batch_size'],
-		verbose=parameters['verbose']
-	)
+	if parameters['bias_model'] is None:
+		parameters['bias_model'] = model_name + '.bias.torch'
 
-	valid_sequences, valid_signals = extract_loci(
-		sequences=parameters['sequences'],
-		signals=parameters['signals'],
-		controls=None,
-		loci=parameters['negatives'],
-		chroms=parameters['validation_chroms'],
-		in_window=parameters['in_window'],
-		out_window=parameters['out_window'],
-		max_jitter=0,
-		verbose=parameters['verbose']
-	)
+	if parameters['accessibility_model'] is None:
+		parameters['accessibility_model'] = (model_name + 
+			'.accessibility.torch')
 
-	trimming = (parameters['in_window'] - parameters['out_window']) // 2
 
-	model = BPNet(n_filters=parameters['n_filters'], 
-		n_layers=parameters['n_layers'], n_outputs=1, n_control_tracks=0,
-		alpha=parameters['alpha'], 
-		name=parameters['name'],
-		trimming=trimming).cuda()
+	# Run pipeline with ChromBPNet model
+	name = '{}.chrombpnet.pipeline.json'.format(parameters['name'])
+	with open(name, 'w') as outfile:
+		outfile.write(json.dumps(parameters, sort_keys=True, indent=4))
 
-	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
+	os.system("bpnet pipeline -p {}".format(name))
 
-	model.fit(training_data, optimizer, X_valid=valid_sequences, 
-		y_valid=valid_signals, max_epochs=parameters['max_epochs'], 
-		validation_iter=parameters['validation_iter'],
-		early_stopping=parameters['early_stopping'],
-		batch_size=parameters['batch_size'])
+
+	# Run pipeline with accessibility model
+	name = '{}.chrombpnet.accessibility.pipeline.json'.format(
+		model_name)
+
+	parameters['model'] = parameters['accessibility_model']
+	parameters['name'] = model_name + '.accessibility'
+
+	with open(name, 'w') as outfile:
+		outfile.write(json.dumps(parameters, sort_keys=True, indent=4))
+
+	os.system("bpnet pipeline -p {}".format(name))	
+
+
+	# Run pipeline with bias model
+	name = '{}.chrombpnet.bias.pipeline.json'.format(model_name)
+
+	parameters['model'] = parameters['bias_model']
+	parameters['name'] = model_name + '.bias'
+
+	with open(name, 'w') as outfile:
+		outfile.write(json.dumps(parameters, sort_keys=True, indent=4))
+
+	os.system("bpnet pipeline -p {}".format(name))	
+

@@ -284,15 +284,23 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 		loci = loci[numpy.isin(loci['chrom'], chroms)]
 
 	# Load the signal and optional control tracks if filenames are given
+	_signals = []
 	if signals is not None:
 		for i, signal in enumerate(signals):
 			if isinstance(signal, str):
-				signals[i] = pyBigWig.open(signal, "r")
+				signal = pyBigWig.open(signal)
+			_signals.append(signal)
 
+		signals = _signals
+				
+	_controls = []
 	if controls is not None:
 		for i, control in enumerate(controls):
 			if isinstance(control, str):
-				controls[i] = pyBigWig.open(control, "r")
+				control = pyBigWig.open(control, "r")
+			_controls.append(control)
+			
+		controls = _controls
 
 	desc = "Loading Loci"
 	d = not verbose

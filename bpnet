@@ -45,8 +45,8 @@ negatives_parser.add_argument("-l", "--bin_width", type=float, default=0.02, hel
 negatives_parser.add_argument("-w", "--width", type=int, default=2114, help="Width for calculating GC content.")
 negatives_parser.add_argument("-v", "--verbose", default=True, action='store_true')
 
-train_parser = subparsers.add_parser("fit", help="Fit a BPNet model.")
-train_parser.add_argument("-p", "--parameters", type=str, required=True,
+fit_parser = subparsers.add_parser("fit", help="Fit a BPNet model.")
+fit_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for fitting the model.")
 
 predict_parser = subparsers.add_parser("predict", help="Make predictions using a trained BPNet model.")
@@ -89,7 +89,7 @@ default_fit_parameters = {
 	'min_counts': 0,
 	'max_counts': 99999999,
 
-	'training_chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+	'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
 		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
 		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
 	'validation_chroms': ['chr8', 'chr10'],
@@ -105,7 +105,7 @@ default_predict_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
 		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
 		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
 	'sequences': None,
@@ -121,9 +121,9 @@ default_interpret_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
-		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
-		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
+		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
+		'chr20', 'chr21', 'chr22', 'chrX'],
 	'sequences': None,
 	'loci': None,
 	'model': None,
@@ -139,9 +139,9 @@ default_marginalize_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr1', 'chr2', 'chr3', 'chr5', 'chr6', 'chr7', 
-		'chr8', 'chr9', 'chr10', 'chr12', 'chr13', 'chr14', 'chr16', 
-		'chr18', 'chr19', 'chr20', 'chr22'],
+	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
+		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
+		'chr20', 'chr21', 'chr22', 'chrX'],
 	'sequences': None,
 	'motifs': None,
 	'loci': None,
@@ -175,7 +175,7 @@ default_pipeline_parameters = {
 	'verbose': False,
 	'min_counts': 0,
 	'max_counts': 99999999,
-	'training_chroms': ['chr2', 'chr3', 'chr4' 'chr5', 'chr6', 'chr7', 
+	'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
 		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
 		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
 	'validation_chroms': ['chr8', 'chr10'],
@@ -207,9 +207,11 @@ default_pipeline_parameters = {
 	'minimal': True
 }
 
+
 ###
 # Commands
 ###
+
 
 def merge_parameters(parameters, default_parameters):
 	"""Merge the provided parameters with the default parameters.
@@ -262,9 +264,12 @@ if args.cmd == 'negatives':
 
 	matched_loci.to_csv(args.output, header=False, sep='\t', index=False)
 
+
 # Fit a BPNet model to data
 if args.cmd == "fit":
 	parameters = merge_parameters(args.parameters, default_fit_parameters)
+
+	###
 
 	training_data = PeakGenerator(
 		loci=parameters['loci'], 
@@ -324,8 +329,11 @@ if args.cmd == "fit":
 		validation_iter=parameters['validation_iter'], 
 		batch_size=parameters['batch_size'])
 
+
 elif args.cmd == 'predict':
 	parameters = merge_parameters(args.parameters, default_predict_parameters)
+
+	###
 
 	model = torch.load(parameters['model']).cuda()
 
@@ -353,8 +361,11 @@ elif args.cmd == 'predict':
 	numpy.savez_compressed(parameters['profile_filename'], y_profiles)
 	numpy.savez_compressed(parameters['counts_filename'], y_counts)
 
+
 elif args.cmd == 'interpret':
 	parameters = merge_parameters(args.parameters, default_interpret_parameters)
+
+	###
 
 	model = torch.load(parameters['model']).cuda()
 
@@ -380,10 +391,13 @@ elif args.cmd == 'interpret':
 	numpy.savez_compressed(parameters['ohe_filename'], X)
 	numpy.savez_compressed(parameters['attr_filename'], X_attr)
 
+
 # Marginalize motifs
 elif args.cmd == 'marginalize':
 	parameters = merge_parameters(args.parameters, 
 		default_marginalize_parameters)
+
+	###
 
 	model = torch.load(parameters['model']).cuda()
 
@@ -407,8 +421,22 @@ elif args.cmd == 'marginalize':
 	marginalization_report(model, parameters['motifs'], X, 
 		parameters['output_filename'], minimal=parameters['minimal'])
 
+
 elif args.cmd == 'pipeline':
 	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
+
+	names = ['profile_filename', 'counts_filename', 'ohe_filename', 
+		'attr_filename', 'modisco_filename', 'marginalization_filename']
+	for name in names[:4]:
+		if parameters[name] is None:
+			parameters[name] = "{}.{}.npz".format(parameters['name'], 
+				name.split("_")[0])
+	
+	for name in names[4:]:
+		if parameters[name] is None:
+			parameters[name] = "{}_{}/".format(parameters['name'], 
+				name.split("_")[0])
+
 
 	# Step 1: Fit a BPNet model to the provided data
 	if parameters['verbose']:
@@ -454,7 +482,7 @@ elif args.cmd == 'pipeline':
 		outfile.write(json.dumps(predict_parameters, sort_keys=True, indent=4))
 
 	os.system("bpnet predict -p {}".format(name))
-
+	
 	
 	# Step 3: Interpret the validation set
 	if parameters['verbose']:
@@ -498,6 +526,7 @@ elif args.cmd == 'pipeline':
 
 
 	# Step 5: Generate the tf-modisco report
+	modisco_name = "{}_modisco_results.h5".format(parameters['name'])
 	if parameters['verbose']:
 		print("\nStep 5: TF-MoDISco reports")
 

@@ -10,9 +10,11 @@ import logomaker
 
 from tqdm import trange
 from captum.attr import DeepLiftShap
+from numba import NumbaDeprecationWarning
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=NumbaDeprecationWarning)
 
 
 class ProfileWrapper(torch.nn.Module):
@@ -111,8 +113,11 @@ def hypothetical_attributions(multipliers, inputs, baselines):
 	return (projected_contribs,)
 
 
-@numba.jit('void(int64, int64[:], int64[:], int32[:, :], int32[:,], int32[:, :], float32[:, :, :])')
-def _fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, counters, shuffled_sequences):
+params = 'void(int64, int64[:], int64[:], int32[:, :], int32[:,], '
+params += 'int32[:, :], float32[:, :, :])'
+@numba.jit(params, nopython=False)
+def _fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, 
+	counters, shuffled_sequences):
 	"""An internal function for fast shuffling using numba."""
 
 	for i in range(n_shuffles):

@@ -57,6 +57,8 @@ class ChromBPNet(torch.nn.Module):
 		self.accessibility = accessibility
 		self.name = name
 		self.logger = None
+		self.n_control_tracks = accessibility.n_control_tracks
+		self.n_outputs = 1
 
 	def forward(self, X, X_ctl=None):
 		"""A forward pass through the network.
@@ -92,7 +94,7 @@ class ChromBPNet(torch.nn.Module):
 		return y_profile, y_counts
 
 	@torch.no_grad()
-	def predict(self, X, batch_size=16):
+	def predict(self, X, X_ctl=None, batch_size=16):
 		"""A method for making batched predictions.
 
 		This method will take in a large number of cell states and provide
@@ -117,7 +119,7 @@ class ChromBPNet(torch.nn.Module):
 
 		y_profile, y_counts = [], []
 		for start in range(0, len(X), batch_size):
-			y_profile_, y_counts_ = self(X[start:start+batch_size])
+			y_profile_, y_counts_ = self(X[start:start+batch_size].cuda())
 			y_profile.append(y_profile_.cpu())
 			y_counts.append(y_counts_.cpu())
 
