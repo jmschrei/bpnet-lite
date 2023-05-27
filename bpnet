@@ -3,6 +3,8 @@
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
 import os
+os.environ['TORCH_CUDNN_V8_API_ENABLED'] = '1'
+
 import sys
 import numpy
 import torch
@@ -21,6 +23,9 @@ from bpnetlite.negatives import extract_matching_loci
 import pandas
 import pyBigWig
 import json
+
+torch.backends.cudnn.benchmark = True
+
 
 desc = """BPNet is an neural network primarily composed of dilated residual
 	convolution layers for modeling the associations between biological
@@ -199,11 +204,12 @@ default_pipeline_parameters = {
 
 	'n_seqlets': 100000,
 	'modisco_filename': None,
+	'modisco_motifs': None,
 
-	'motifs': None,
 	'n_loci': None,
 	'shuffle': False,
 	'marginalization_filename': None,
+	'marginalization_motifs': None,
 	'minimal': True
 }
 
@@ -483,7 +489,7 @@ elif args.cmd == 'pipeline':
 
 	os.system("bpnet predict -p {}".format(name))
 	
-	
+
 	# Step 3: Interpret the validation set
 	if parameters['verbose']:
 		print("\nStep 3: Calculating attributions")
@@ -535,7 +541,7 @@ elif args.cmd == 'pipeline':
 			parameters['name'])
 
 	os.system('modisco report -i {0} -o {1} -s {1} -m {2}'.format(modisco_name, 
-		parameters['modisco_filename'], parameters['motifs']))
+		parameters['modisco_filename'], parameters['modisco_motifs']))
 	
 
 	# Step 6: Marginalization experiments
@@ -547,6 +553,7 @@ elif args.cmd == 'pipeline':
 	marginalize_parameters['chroms'] = parameters['validation_chroms']
 	marginalize_parameters['loci'] = parameters['negatives']
 	marginalize_parameters['output_filename'] = parameters['marginalization_filename']
+	marginalize_parameters['motifs'] = parameters['marginalization_motifs']
 
 	if marginalize_parameters['output_filename'] is None:
 		marginalize_parameters['output_filename'] = '{}_marginalize/'.format(

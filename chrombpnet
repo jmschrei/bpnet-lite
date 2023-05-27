@@ -67,6 +67,8 @@ bias_parser.add_argument("-p", "--parameters", type=str, required=True,
 default_fit_parameters = {
 	'n_filters': 64,
 	'n_layers': 8,
+	'bias_n_filters': 64,
+	'bias_n_layers': 4,
 	'profile_output_bias': True,
 	'count_output_bias': True,
 	'name': None,
@@ -155,6 +157,8 @@ default_pipeline_parameters = {
 	# Model architecture parameters
 	'n_filters': 64,
 	'n_layers': 8,
+	'bias_n_filters': 64,
+	'bias_n_layers': 4,
 	'profile_output_bias': True,
 	'count_output_bias': True,
 	'in_window': 2114,
@@ -199,11 +203,12 @@ default_pipeline_parameters = {
 
 	'n_seqlets': 100000,
 	'modisco_filename': None,
+	'modisco_motifs': None,
 
-	'motifs': None,
 	'n_loci': None,
 	'shuffle': False,
 	'marginalization_filename': None,
+	'marginalization_motifs': None,
 	'minimal': True
 }
 
@@ -279,6 +284,8 @@ if args.cmd == "fit":
 		bias_fit_parameters = {key: parameters[key] for key in 
 			default_fit_parameters}
 		bias_fit_parameters['loci'] = parameters['negatives']
+		bias_fit_parameters['n_layers'] = parameters['bias_n_layers']
+		bias_fit_parameters['n_filters'] = parameters['bias_n_filters']
 
 		min_counts = training_data.dataset.signals.sum(dim=(1, 2)).min().item()
 			

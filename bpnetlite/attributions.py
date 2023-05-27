@@ -275,34 +275,33 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	else:
 		raise ValueError("model_output must be one of 'profile' or 'count'.")
 
-	ig = DeepLiftShap(wrapper)
+	X = X.cuda()
 
 	attributions = []
 	references = []
 	with torch.no_grad():
 		for i in trange(len(X), disable=not verbose):
-			X_ = X[i:i+1]
-			reference = dinucleotide_shuffle(X_[0], n_shuffles=n_shuffles, 
-				random_state=random_state).cuda()
+			ig = DeepLiftShap(wrapper)
 
-			X_ = X_.cuda()
+			reference = dinucleotide_shuffle(X[i].cpu(), n_shuffles=n_shuffles, 
+				random_state=random_state).cuda()
 
 			if args is None:
 				args_ = None
 			else:
 				args_ = tuple([arg[i:i+1].cuda() for arg in args])
-						
-			attr = ig.attribute(X_, reference, target=0, 
+					
+			attr = ig.attribute(X[i:i+1], reference, target=0, 
 				additional_forward_args=args_, 
 				custom_attribution_func=hypothetical_attributions)
 
 			if not hypothetical:
-				attr = (attr * X_)
+				attr = (attr * X[i:i+1])
 			
 			if return_references:
 				references.append(reference.unsqueeze(0))
 
-			attributions.append(attr.cpu())
+			attributions.append(attr.cpu().detach())
 
 	attributions = torch.cat(attributions)
 
