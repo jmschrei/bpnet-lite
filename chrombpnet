@@ -32,6 +32,7 @@ desc = """ChromBPNet is a neural network that builds off the original BPNet
 _help = """Must be either 'fit', 'predict', 'interpret', 'marginalize', 
 	or 'pipeline'."""
 
+
 # Read in the arguments
 parser = argparse.ArgumentParser(description=desc)
 subparsers = parser.add_subparsers(help=_help, required=True, dest='cmd')
@@ -40,34 +41,35 @@ train_parser = subparsers.add_parser("fit", help="Fit a BPNet model.")
 train_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for fitting the model.")
 
-predict_parser = subparsers.add_parser("predict", help="Make predictions using a trained BPNet model.")
+predict_parser = subparsers.add_parser("predict", 
+	help="Make predictions using a trained BPNet model.")
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
-interpret_parser = subparsers.add_parser("interpret", help="Make interpretations using a trained BPNet model.")
+interpret_parser = subparsers.add_parser("interpret", 
+	help="Make interpretations using a trained BPNet model.")
 interpret_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
-marginalize_parser = subparsers.add_parser("marginalize", help="Run marginalizations given motifs.")
+marginalize_parser = subparsers.add_parser("marginalize", 
+	help="Run marginalizations given motifs.")
 marginalize_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
-pipeline_parser = subparsers.add_parser("pipeline", help="Run each step on the given files.")
+pipeline_parser = subparsers.add_parser("pipeline", 
+	help="Run each step on the given files.")
 pipeline_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters used for each step.")
 
-bias_parser = subparsers.add_parser("bias", help="Fit a bias model.")
-bias_parser.add_argument("-p", "--parameters", type=str, required=True,
-	help="A JSON file containing the parameters for fitting the model.")
 
 ###
 # Default Parameters
 ###
 
 default_fit_parameters = {
-	'n_filters': 64,
+	'n_filters': 256,
 	'n_layers': 8,
-	'bias_n_filters': 64,
+	'bias_n_filters': 256,
 	'bias_n_layers': 4,
 	'profile_output_bias': True,
 	'count_output_bias': True,

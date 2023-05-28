@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='bpnet-lite',
-    version='0.5.0',
+    version='0.5.1',
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
     packages=['bpnetlite'],
@@ -22,6 +22,7 @@ setup(
         "numba >= 0.55.1",
         "logomaker",
         "captum == 0.5.0",
-        "seaborn >= 0.11.2"
+        "seaborn >= 0.11.2",
+        "modisco-lite >= 2.0.0"
     ],
 )

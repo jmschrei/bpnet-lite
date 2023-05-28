@@ -17,6 +17,21 @@ import matplotlib.pyplot as plt
 
 
 def read_meme(filename):
+	"""Read a MEME file and return a dictionary of the PWMs.
+
+	Parameters
+	----------
+	filename: str
+		The name of the MEME file to open.
+
+
+	Returns
+	-------
+	motifs: dict
+		A dictionary of PWMs where the key is the name of the motif extracted
+		from the MEME file and the value is the PWM.
+	"""
+
 	motifs = {}
 
 	with open(filename, "r") as infile:
@@ -25,7 +40,9 @@ def read_meme(filename):
 		for line in infile:
 			if motif is None:
 				if line[:5] == 'MOTIF':
-					motif = line.split()[1]
+					motif = line.replace("MOTIF ", "").strip()
+					motif = motif.replace("/", "-").replace(" ", ",")
+
 				else:
 					continue
 
@@ -46,6 +63,53 @@ def read_meme(filename):
 
 
 def marginalize(model, motif, X):
+	"""Runs a single marginalization experiment.
+
+	Given a predictive model, a motif to insert, and a set of background
+	sequences, evaluate the difference in predictions from the model when
+	using the background sequences and after inserting the motif into the
+	middle of the sequences. This will look at the difference in the profile
+	head, the count head, as well as the attributions from the profile head.
+
+
+	Parameters
+	----------
+	model: bpnetlite.bpnet.BPNet or bpnetlite.chrombpnet.ChromBPNet
+		A BPNet- or ChromBPNet-style model that outputs predictions for a
+		profile head and a count head.
+
+	motif: str
+		A motif to insert into the middle of the background sequences.
+
+	X: numpy.ndarray or torch.Tensor, shape=(n, 4, 2114)
+		A one-hot encoded set of n sequences to run through the model.
+
+
+	Returns
+	-------
+	y_before_profile: torch.Tensor, shape=(n, 4, 1000)
+		The profile head predictions from the background sequences
+
+	y_after_profile: torch.Tensor, shape=(n, 4, 1000)
+		The profile head predictions after inserting the motif into the
+		background sequences.
+
+	y_before_counts: torch.Tensor, shape=(n, 1)
+		The count head predictions from the background sequences
+
+	y_after_counts: torch.Tensor, shape=(n, 1)
+		The count head predictions after inserting the motif into the
+		background sequences.
+
+	attr_before: torch.Tensor, shape=(n, 4, 2114)
+		The DeepLIFT/SHAP attributions for each nucleotide in the background
+		sequences.
+
+	attr_after: torch.Tensor, shape=(n, 4, 2114)
+		The DeepLIFT/SHAP attributions for each nucleotide after inserting
+		the motif into the background sequences.
+	"""
+
 	if isinstance(X, numpy.ndarray):
 		X = torch.from_numpy(X)
 
@@ -134,6 +198,35 @@ def _plot_attributions(y, ylim, path, figsize=(10,3), **kwargs):
 
 
 def marginalization_report(model, motifs, sequences, output_dir, minimal=False):
+	"""Create an HTML report showing the impact of each motif.
+
+	Take in a predictive model, a MEME file of motifs, and a set of sequences,
+	and run a marginalization experiment on each motif. Store the images
+	to the output directory, and then create an HTML report that puts together
+	these images.
+
+
+	Parameters
+	----------
+	model: bpnetlite.bpnet.BPNet or bpnetlite.chrombpnet.ChromBPNet
+		A BPNet- or ChromBPNet-style model that outputs predictions for a
+		profile head and a count head.
+
+	motif: str
+		A motif to insert into the middle of the background sequences.
+
+	sequences: numpy.ndarray or torch.Tensor, shape=(n, 4, 2114)
+		A one-hot encoded set of n sequences to run through the model.
+
+	output_dir: str
+		The folder name to put all the images that are generated.
+
+	minimal: bool, optional
+		Whether to produce a minimal report, which shows the differences in
+		outputs, or the full report, which shows the results before and after
+		insertion as well as the differences. Potentially useful for debugging.
+	"""
+
 	motifs = list(read_meme(motifs).items())
 
 	if not os.path.isdir(output_dir):

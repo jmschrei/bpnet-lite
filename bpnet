@@ -19,6 +19,7 @@ from bpnetlite.attributions import calculate_attributions
 from bpnetlite.marginalize import marginalization_report
 
 from bpnetlite.negatives import extract_matching_loci
+from bpnetlite.negatives import calculate_gc_genomewide
 
 import pandas
 import pyBigWig
@@ -37,38 +38,51 @@ desc = """BPNet is an neural network primarily composed of dilated residual
 _help = """Must be either 'negatives', 'fit', 'predict', 'interpret',
 	'marginalize', or 'pipeline'."""
 
+
 # Read in the arguments
 parser = argparse.ArgumentParser(description=desc)
 subparsers = parser.add_subparsers(help=_help, required=True, dest='cmd')
 
-negatives_parser = subparsers.add_parser("negatives", help="Sample GC-matched negatives.")
-negatives_parser.add_argument("-i", "--peaks", required=True, help="Peak bed file.")
+negatives_parser = subparsers.add_parser("negatives", 
+	help="Sample GC-matched negatives.")
+negatives_parser.add_argument("-i", "--peaks", required=True, 
+	help="Peak bed file.")
 negatives_parser.add_argument("-f", "--fasta", help="Genome FASTA file.")
-negatives_parser.add_argument("-b", "--bigwig", required=True, help="GC content bigwig.")
-negatives_parser.add_argument("-o", "--output", required=True, help="Output bed file.")
-negatives_parser.add_argument("-l", "--bin_width", type=float, default=0.02, help="GC bin width to match.")
-negatives_parser.add_argument("-w", "--width", type=int, default=2114, help="Width for calculating GC content.")
-negatives_parser.add_argument("-v", "--verbose", default=True, action='store_true')
+negatives_parser.add_argument("-b", "--bigwig", required=True, 
+	help="GC content bigwig.")
+negatives_parser.add_argument("-o", "--output", required=True, 
+	help="Output bed file.")
+negatives_parser.add_argument("-l", "--bin_width", type=float, default=0.02, 
+	help="GC bin width to match.")
+negatives_parser.add_argument("-w", "--width", type=int, default=2114, 
+	help="Width for calculating GC content.")
+negatives_parser.add_argument("-v", "--verbose", default=True, 
+	action='store_true')
 
 fit_parser = subparsers.add_parser("fit", help="Fit a BPNet model.")
 fit_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for fitting the model.")
 
-predict_parser = subparsers.add_parser("predict", help="Make predictions using a trained BPNet model.")
+predict_parser = subparsers.add_parser("predict", 
+	help="Make predictions using a trained BPNet model.")
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
-interpret_parser = subparsers.add_parser("interpret", help="Make interpretations using a trained BPNet model.")
+interpret_parser = subparsers.add_parser("interpret", 
+	help="Make interpretations using a trained BPNet model.")
 interpret_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
-marginalize_parser = subparsers.add_parser("marginalize", help="Run marginalizations given motifs.")
+marginalize_parser = subparsers.add_parser("marginalize", 
+	help="Run marginalizations given motifs.")
 marginalize_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
-pipeline_parser = subparsers.add_parser("pipeline", help="Run each step on the given files.")
+pipeline_parser = subparsers.add_parser("pipeline", 
+	help="Run each step on the given files.")
 pipeline_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters used for each step.")
+
 
 ###
 # Default Parameters
@@ -328,6 +342,10 @@ if args.cmd == "fit":
 		verbose=parameters['verbose']).cuda()
 
 	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
+
+	if parameters['verbose']:
+		print("Training Set Size: ", training_data.dataset.sequences.shape[0])
+		print("Validation Set Size: ", valid_sequences.shape[0])
 
 	model.fit(training_data, optimizer, X_valid=valid_sequences, 
 		X_ctl_valid=valid_controls, y_valid=valid_signals, 
