@@ -126,6 +126,8 @@ Default parameters are specified in the command-line tools themselves. When a va
 
 ### BPNet Pipeline
 
+When running the pipeline command, JSONs for each of the steps in the pipeline will be constructed from merging the parameters in the first layer with those in the nested JSONs, e.g., in the `fit_parameters`. If provided, parameters in the nested JSON will always override those in the first layer. For example, if you want to make predictions on a different genome than one has trained on, you can pass a different `sequences` and `loci` keyword in the `predict_parameters` JSON, or if you want to use a different MEME file in the marginalization and TF-MoDISco step you can. 
+
 ```
 {
 	"n_filters": 64,              # Number of filters in the convolutions
@@ -196,7 +198,7 @@ Default parameters are specified in the command-line tools themselves. When a va
       # Loci to make predictions for (can be a list)
 		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz", 
       
-		"signals": null,   # A list of bigWig files to extract signal from
+		"sequences": null,   # A list of bigWig files to extract signal from
 		"controls": null,  # An optional list of bigWig files containing control signals 
 		"verbose": null    # Whether to print out a log to the terminal during training
 	},
@@ -313,6 +315,8 @@ Default parameters are specified in the command-line tools themselves. When a va
 ```
 
 ## ChromBPNet Pipeline
+
+When running the pipeline command, JSONs for each of the steps in the pipeline will be constructed from merging the parameters in the first layer with those in the nested JSONs, e.g., in the `fit_parameters`. If provided, parameters in the nested JSON will always override those in the first layer. For example, if you want to make predictions on a different genome than one has trained on, you can pass a different `sequences` and `loci` keyword in the `predict_parameters` JSON, or if you want to use a different MEME file in the marginalization and TF-MoDISco step you can. 
 
 ```
 {
