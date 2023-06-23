@@ -1,41 +1,64 @@
 # bpnet-lite
 
-![bpnet-schematic](https://user-images.githubusercontent.com/3916816/215882453-873d2835-c639-47d5-a84b-b57a7922fce0.png)
+> **Note**
+> IMPORTANT: bpnet-lite is not meant to replace the full service implementations of BPNet or ChromBPNet. Please see the official repositories for those projects for TensorFlow/Keras implementations of those models along with complete tutorials on how to use them effectively.
 
-bpnet-lite is a lightweight version of [BPNet](https://www.nature.com/articles/s41588-021-00782-6) that contains a reference implementation in PyTorch, efficient data loaders, and a command-line tool for training, making predictions for, and calculating attributions from, a model. This implementation is meant to be used for quickly exploring data sets using BPNet and as a springboard for prototyping new ideas that involve modifying the code. Important: bpnet-lite does not include all of the features that have been developed for BPNet: see https://github.com/kundajelab/basepairmodels for that.
+bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [paper | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. Additionally, it contains efficient data loaders and common operations one would do with these trained models including calculating attributions, running TF-MoDISco, and performing marginalization experiments. These operations are wrapped in command-line tools for ease-of-use and organized in a pipeline command representing the standard workflow. This package is meant to be used for quickly exploring data sets using BPNet or ChromBPNet and as a springboard for prototyping new ideas that involve modifying the code. 
 
 ### Installation
 
 You can install bpnet-lite with `pip install bpnet-lite`.
 
+## BPNet
+
+![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/5c6e6f73-aedd-4256-8776-5ef57a728d5e)
+
+BPNet is a convolutional neural network that has been used to map nucleotide sequences to experimental readouts, e.g. ChIP-seq, ChIP-nexus, and ChIP-exo, and identify the driving motifs underlying these assays. Although these models achieve high predictive accuracy, their main purpose is to be interpreted using feature attribution methods to inspect the cis-regulatory code underlying the readouts being modeled. Specifically, when paired with a method like DeepLIFT/SHAP, they can be used to explain the driving motifs and syntax of those motifs underlying each signal peak in a readout. When looking across all peaks these attributions can be clustered using an algorithm like TF-MoDISco to identify repeated patterns. Finally, one can construct a variety of perturbations to reference sequence to identify variant effect or marginalize out background. 
+
 ### BPNet Command Line Tools
 
-bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps necessary for training and using BPNet models. Specifically, it can be used to calculate GC-matched negatives from a peak file, train a BPNet model with flexibility as to the inputs, use a trained model to make predictions, use a trained model to calculate DeepLIFT/DeepSHAP attribution scores, and to perform marginalization experiments. Each comment, except for calculating GC-matched negatives, requires a JSON that contains the parameters, with examples of each in the `example_jsons` folder. 
+bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps necessary for training and using BPNet models. Except for extracting GC-matched negatives, each command requires a JSON that contains the parameters, with examples of each in the `example_jsons` folder. See the README in that folder for exact parameters for each JSON.
 
-#### Calculating GC-matched negatives
-`bpnet negatives -i <peaks>.bed -f <fasta>.fa -b <bigwig>.bw -o matched_loci.bed -l 0.02 -w 2114 -v`
+```
+bpnet negatives -i <peaks>.bed -f <fasta>.fa -b <bigwig>.bw -o matched_loci.bed -l 0.02 -w 2114 -v
+bpnet fit -p bpnet_fit_example.json
+bpnet predict -p bpnet_predict_example.json
+bpnet interpret -p bpnet_interpret_example.json
+bpnet marginalize -p bpnet_marginalize_example.json
+```
 
-This command takes in a bed file of loci, some information about the genome being considered, the GC bin size, and the width of the window to calculate GC content for (usually the same size as the model input window), and returns a set of loci that are GC-matched and not within the provided bed file coordinates. If a FASTA file is provided, the first step is to calculate a rolling average of the GC content using the provided window size, and store that average at the provided bigwig path. If the GC content has already been calculated and stored as a bigwig, a FASTA file does not need to be provided and the bigwig will be used directly.
+Alternatively, one can run the entire pipeline of commands specified above (except for the calculation of negatives) in addition to also running TF-MoDISco and generating a report on the found motifs.
 
-#### Training a BPNet model 
-`bpnet train -p example_train_bpnet.json`
+```
+bpnet pipeline -p bpnet_pipeline_example.json
+```
 
-This command takes in a [JSON](https://github.com/jmschrei/bpnet-lite/blob/master/example_jsons/example_train_bpnet.json) that has model architecture, training hyperparameters, and locations of the data, and outputs two models: one that is the best model found during training according to the validation set loss ({name}.torch), and one that is the final state of the model after all training, regardless of if it's the best model ({name}.final.torch). 
+## ChromBPNet
 
-#### Making predictions with a BPNet model
+![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/e6f9bbdf-f107-4b3e-8b97-dc552af2239c)
 
-`bpnet predict -p predict_example.json`
+ChromBPNet extends the original modeling framework to DNase-seq and ATAC-seq experiments. A separate framework is necessary because the cutting enzymes used in these experiments, particularly the hyperactive Tn5 enzyme used in ATAC-seq experiments, have soft sequences preferences that can distort the observed readouts. Hence, it becomes necessary to train a small BPNet model to explicitly capture this soft sequence (the "bias model") bias before subsequently training a second BPNet model jointly with the frozen bias model to capture the true drivers of accessibility (the "accessibiity model"). Together, these models and the manner in which their predictions are combined are referred to as ChromBPNet. 
 
-This command takes in a [JSON](https://github.com/jmschrei/bpnet-lite/blob/master/example_jsons/predict_example.json) that specifies the loci and locations of the data and saves a numpy array for the profile head and a second numpy array for the count head.
+Generally, one can perform the same analyses using ChromBPNet as one can using BPNet. However, an important note is that the full ChromBPNet model faithfully represents the experimental readout -- bias and all -- and so for more inspection tasks, e.g. variant effect prediction and interpretation, one should use only the accessibility model. Because the accessibiity model itself is conceptually, and also literally implemented as, a BPNet model, one can run the same procedure and use the BPNet command-line tool using it.
 
-#### Calculating attributions with a BPNet model
+###
 
-`bpnet interpret -p interpret_json` 
+bpnet-lite comes with a second command-line tool, `chrombpnet`, that supports the steps necessary for training and using ChromBPNet models. These commands are used exactly the same way as the `bpnet` command-line tool with only minor changes to the parameters in the JSON. Note that the `predict`, `interpret` and `marginalize` commands will internally run their `bpnet` counterparts, but are still provided for convenience.
 
-Similarly to the predict command, this command takes in a [JSON](https://github.com/jmschrei/bpnet-lite/blob/master/example_jsons/interpret_example.json) that species the loci and the locations of the data and saves a numpy array for the one-hot encoded sequence and a second numpy array for the SHAP scores. Importantly, these SHAP scores will include the hypothetical contributions, i.e., the contributions for all possible characters at each position, not just the actual character. 
+```
+chrombpnet fit -p chrombpnet_fit_example.json
+chrombpnet predict -p chrombpnet_predict_example.json
+chrombpnet interpret -p chrombpnet_interpret_example.json
+chrombpnet marginalize -p chrombpnet_marginalize_example.json
+```
 
+Similarly to `bpnet`, one can run the entire pipeline of commands specified above in addition to also running TF-MoDISco and generating a report on the found motifs. Unlike `bpnet`, this command will run each of those steps for (1) the full ChromBPNet model, (2) the accessibility model alone, and (3) the bias model. 
 
-### Python API
+```
+chrombpnet pipeline -p chrombpnet_pipeline_example.json
+```
+
+## Python API
 
 The Python API is made up of a small number of components that can be customized or re-organized. Start off by specifying where your data will be.
 
@@ -77,8 +100,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 And, finally, we can call the `fit_generator` method to train the model. This function is largely just a training loop that trains the profile head using the multinomial log-likelihood loss and the count head using the mean-squared error loss, but a benefit of this built-in method is that it outputs a tsv of the training statistics that you can redirect to a log file.
 
 ```python
-model.fit_generator(training_data, optimizer, X_valid=X_valid, 
+model.fit(training_data, optimizer, X_valid=X_valid, 
 	X_ctl_valid=X_ctl_valid, y_valid=y_valid)
 ```
 
-Because `model` is a PyTorch object, it can be trained using a custom training loop in the same way any base PyTorch model can be trained if you'd prefer to do that. Likewise, if you'd prefer to use a custom data generator you can write your own and pass that into the `fit_generator` function. 
+Because `model` is a PyTorch object, it can be trained using a custom training loop in the same way any base PyTorch model can be trained if you'd prefer to do that. Likewise, if you'd prefer to use a custom data generator you can write your own and pass that into the `fit` function. 
