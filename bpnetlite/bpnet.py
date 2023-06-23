@@ -14,11 +14,11 @@ import torch
 
 from .losses import MNLLLoss
 from .losses import log1pMSELoss
-
 from .performance import pearson_corr
 from .performance import calculate_performance_measures
-
 from .logging import Logger
+
+from tqdm import tqdm
 
 torch.backends.cudnn.benchmark = True
 
@@ -206,7 +206,7 @@ class BPNet(torch.nn.Module):
 		return y_profile, y_counts
 
 
-	def predict(self, X, X_ctl=None, batch_size=64):
+	def predict(self, X, X_ctl=None, batch_size=64, verbose=False):
 		"""Make predictions for a large number of examples.
 
 		This method will make predictions for a number of examples that exceed
@@ -227,6 +227,9 @@ class BPNet(torch.nn.Module):
 		batch_size: int, optional
 			The number of examples to run at a time. Default is 64.
 
+		verbose: bool
+			Whether to print a progress bar during predictions.
+
 
 		Returns
 		-------
@@ -241,7 +244,7 @@ class BPNet(torch.nn.Module):
 			ends = starts + batch_size
 
 			y_profiles, y_counts = [], []
-			for start, end in zip(starts, ends):
+			for start, end in tqdm(zip(starts, ends), disable=not verbose):
 				X_batch = X[start:end].cuda()
 				X_ctl_batch = None if X_ctl is None else X_ctl[start:end].cuda()
 
@@ -484,6 +487,7 @@ class BPNet(torch.nn.Module):
 
 		model.iconv.weight = convert_w(w[name.format(1)][k])
 		model.iconv.bias = convert_b(w[name.format(1)][b])
+		model.iconv.padding = 12
 
 		for i in range(2, n_layers+2):
 			model.rconvs[i-2].weight = convert_w(w[name.format(i)][k])
@@ -491,6 +495,7 @@ class BPNet(torch.nn.Module):
 
 		model.fconv.weight = convert_w(w[name.format(n_layers+2)][k])
 		model.fconv.bias = convert_b(w[name.format(n_layers+2)][b])
+		model.fconv.padding = 12
 
 		name = "logcounts_1" if not bias else "logcounts/logcounts"
 		model.linear.weight = torch.nn.Parameter(torch.tensor(w[name][k][:].T))

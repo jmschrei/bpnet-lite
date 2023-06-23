@@ -11,55 +11,10 @@ import seaborn
 import logomaker
 
 from .io import one_hot_encode
+from .io import read_meme
 from .attributions import calculate_attributions
 
 import matplotlib.pyplot as plt
-
-
-def read_meme(filename):
-	"""Read a MEME file and return a dictionary of the PWMs.
-
-	Parameters
-	----------
-	filename: str
-		The name of the MEME file to open.
-
-
-	Returns
-	-------
-	motifs: dict
-		A dictionary of PWMs where the key is the name of the motif extracted
-		from the MEME file and the value is the PWM.
-	"""
-
-	motifs = {}
-
-	with open(filename, "r") as infile:
-		motif, width, i = None, None, 0
-
-		for line in infile:
-			if motif is None:
-				if line[:5] == 'MOTIF':
-					motif = line.replace("MOTIF ", "").strip()
-					motif = motif.replace("/", "-").replace(" ", ",")
-
-				else:
-					continue
-
-			elif width is None:
-				if line[:6] == 'letter':
-					width = int(line.split()[5])
-					pwm = numpy.zeros((width, 4))
-
-			elif i < width:
-				pwm[i] = list(map(float, line.split()))
-				i += 1
-
-			else:
-				motifs[motif] = pwm
-				motif, width, i = None, None, 0
-
-	return motifs
 
 
 def marginalize(model, motif, X):
@@ -124,7 +79,8 @@ def marginalize(model, motif, X):
 	y_before_profile, y_before_counts = model.predict(X, X_ctl)
 	y_before_profile = torch.nn.functional.softmax(y_before_profile, dim=-1)
 
-	attr_before = calculate_attributions(model, X, args=args, n_shuffles=10)
+	attr_before = calculate_attributions(model, X, args=args, n_shuffles=10,
+		batch_size=1)
 
 	X_perturb = torch.clone(X)
 	motif_ohe = one_hot_encode(motif, alphabet=['A', 'C', 'G', 'T'])
@@ -139,7 +95,7 @@ def marginalize(model, motif, X):
 	y_after_profile = torch.nn.functional.softmax(y_after_profile, dim=-1)
 
 	attr_after = calculate_attributions(model, X_perturb, args=args, 
-		n_shuffles=10)
+		n_shuffles=10, batch_size=1)
 
 	return (y_before_profile, y_after_profile, y_before_counts, y_after_counts, 
 		attr_before, attr_after)

@@ -9,12 +9,133 @@ import pandas
 import logomaker
 
 from tqdm import trange
-from captum.attr import DeepLiftShap
+from captum.attr import DeepLiftShap as CaptumDeepLiftShap
 from numba import NumbaDeprecationWarning
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=NumbaDeprecationWarning)
+
+
+class DeepLiftShap():
+	"""A vectorized version of the DeepLIFT/SHAP algorithm from Captum.
+
+	This approach is based on the Captum approach of assigning hooks to
+	layers that modify the gradients to implement the rescale rule. This
+	implementation is vectorized in a manner that can accept unique references
+	for each example to be explained as well as multiple references for each
+	example.
+
+	The implementation is minimal and currently only supports the operations
+	used in bpnet-lite. This is not meant to be a general-purpose implementation
+	of the algorithm and may not work with custom architectures.
+	
+
+	Parameters
+	----------
+	model: bpnetlite.BPNet or bpnetlite.ChromBPNet
+		A BPNet or ChromBPNet module as implemented in this repo.
+
+	eps: float, optional
+		An epsilon with which to threshold gradients to ensure that there
+		isn't an explosion. Default is 1e-10.
+	"""
+
+	def __init__(self, model, attribution_func=None, eps=1e-10):
+		self.model = model
+		self.attribution_func = attribution_func
+		self.eps = eps
+		self.forward_handles = []
+		self.backward_handles = []
+
+	def attribute(self, inputs, baselines, args=None):
+		assert inputs.shape[1:] == baselines.shape[2:]
+		n_inputs, n_baselines = baselines.shape[:2]
+
+		inputs = inputs.repeat_interleave(n_baselines, dim=0).requires_grad_()
+		baselines = baselines.reshape(-1, *baselines.shape[2:]).requires_grad_()
+
+		if args is not None:
+			args = (arg.repeat_interleave(n_baselines, dim=0) for arg in args)
+		else:
+			args = None
+
+		###
+
+		try:
+			self.model.apply(self._register_hooks)
+			inputs_ = torch.cat([inputs, baselines])
+
+			# Calculate the gradients using the rescale rule
+			with torch.autograd.set_grad_enabled(True):
+				if args is not None:
+					args = (torch.cat([arg, arg]) for arg in 
+						args)
+					outputs = self.model(inputs_, *args)
+				else:
+					outputs = self.model(inputs_)
+
+				outputs = torch.chunk(outputs, 2)[0].sum()
+				gradients = torch.autograd.grad(outputs, inputs)[0]
+
+			# Process the gradients to get attributions
+			if self.attribution_func is None:
+				attributions = gradients
+			else:
+				attributions = self.attribution_func((gradients,), (inputs,), 
+					(baselines,))[0]
+
+		finally:
+			for forward_handle in self.forward_handles:
+				forward_handle.remove()
+			for backward_handle in self.backward_handles:
+				backward_handle.remove()
+
+		###
+
+		attr_shape = (n_inputs, n_baselines) + attributions.shape[1:]
+		attributions = torch.mean(attributions.view(attr_shape), dim=1, 
+			keepdim=False)
+		return attributions
+
+	def _forward_pre_hook(self, module, inputs):
+		module.input = inputs[0].clone().detach()
+
+	def _forward_hook(self, module, inputs, outputs):
+		module.output = outputs.clone().detach()
+
+	def _backward_hook(self, module, grad_input, grad_output):
+		delta_in_ = torch.sub(*module.input.chunk(2))
+		delta_out_ = torch.sub(*module.output.chunk(2))
+
+		delta_in = torch.cat([delta_in_, delta_in_])
+		delta_out = torch.cat([delta_out_, delta_out_])
+
+		delta = delta_out / delta_in
+
+		grad_input = (torch.where(
+			abs(delta_in) < self.eps, grad_input[0], grad_output[0] * delta),
+		)
+		return grad_input
+
+	def _can_register_hook(self, module):
+		return not (len(module._backward_hooks) > 0 or not isinstance(module, 
+			torch.nn.ReLU))
+
+	def _register_hooks(self, module, attribute_to_layer_input=True):
+		if not self._can_register_hook(module) or (
+			not attribute_to_layer_input and module is self.layer
+		):
+			return
+
+		# adds forward hook to leaf nodes that are non-linear
+		forward_handle = module.register_forward_hook(self._forward_hook)
+		pre_forward_handle = module.register_forward_pre_hook(self._forward_pre_hook)
+		backward_handle = module.register_full_backward_hook(self._backward_hook)
+
+		self.forward_handles.append(forward_handle)
+		self.forward_handles.append(pre_forward_handle)
+		self.backward_handles.append(backward_handle)
 
 
 class ProfileWrapper(torch.nn.Module):
@@ -114,11 +235,13 @@ def hypothetical_attributions(multipliers, inputs, baselines):
 
 
 params = 'void(int64, int64[:], int64[:], int32[:, :], int32[:,], '
-params += 'int32[:, :], float32[:, :, :])'
+params += 'int32[:, :], float32[:, :, :], int32)'
 @numba.jit(params, nopython=False)
 def _fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, 
-	counters, shuffled_sequences):
+	counters, shuffled_sequences, random_state):
 	"""An internal function for fast shuffling using numba."""
+
+	numpy.random.seed(random_state)
 
 	for i in range(n_shuffles):
 		for char in chars:
@@ -175,8 +298,8 @@ def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 		The shuffled sequences.
 	"""
 
-	if not isinstance(random_state, numpy.random.RandomState):
-		random_state = numpy.random.RandomState(random_state)
+	if random_state is None:
+		random_state = numpy.random.randint(0, 9999999)
 
 	chars, idxs = torch.unique(sequence.argmax(axis=0), return_inverse=True)
 	chars, idxs = chars.numpy(), idxs.numpy()
@@ -191,20 +314,23 @@ def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 		next_idxs[char][:n] = next_idxs_ + 1
 		next_idxs_counts[char] = n
 
-	shuffled_sequences = numpy.zeros((n_shuffles, *sequence.shape), dtype=numpy.float32)
+	shuffled_sequences = numpy.zeros((n_shuffles, *sequence.shape), 
+		dtype=numpy.float32)
 	counters = numpy.zeros((n_shuffles, len(chars)), dtype=numpy.int32)
 
 	_fast_shuffle(n_shuffles, chars, idxs, next_idxs, next_idxs_counts, 
-		counters, shuffled_sequences)
+		counters, shuffled_sequences, random_state)
 	
 	shuffled_sequences = torch.from_numpy(shuffled_sequences)
 	return shuffled_sequences
 
 
-def calculate_attributions(model, X, args=None, model_output="profile", 
+def old_calculate_attributions(model, X, args=None, model_output="profile", 
 	hypothetical=False, n_shuffles=20, return_references=False, verbose=False, 
 	random_state=None):
-	"""Calculate attributions using DeepLift/Shap and a given model. 
+	"""A deprecated version using the Captum codebase.
+
+	Calculate attributions using DeepLift/Shap and a given model. 
 
 	This function will calculate DeepLift/Shap attributions on a set of
 	sequences. It assumes that the model returns "logits" in the first output,
@@ -281,10 +407,10 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	references = []
 	with torch.no_grad():
 		for i in trange(len(X), disable=not verbose):
-			ig = DeepLiftShap(wrapper)
+			ig = CaptumDeepLiftShap(wrapper)
 
 			reference = dinucleotide_shuffle(X[i].cpu(), n_shuffles=n_shuffles, 
-				random_state=random_state).cuda()
+				random_state=random_state).to(X.dtype).cuda()
 
 			if args is None:
 				args_ = None
@@ -307,6 +433,124 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 
 	if return_references:
 		return attributions, torch.cat(references)
+	return attributions
+
+
+def calculate_attributions(model, X, args=None, model_output="profile", 
+	attribution_func=hypothetical_attributions, hypothetical=False,
+	references='dinucleotide', n_shuffles=20, batch_size=32, 
+	return_references=False, verbose=False, random_state=None):
+	"""Calculate attributions using DeepLift/Shap and a given model. 
+
+	This function will calculate DeepLift/Shap attributions on a set of
+	sequences. It assumes that the model returns "logits" in the first output,
+	not softmax probabilities, and count predictions in the second output.
+	It will create GC-matched negatives to use as a reference and proceed
+	using the given batch size.
+
+
+	Parameters
+	----------
+	model: torch.nn.Module
+		The model to use, either BPNet or one of it's variants.
+
+	X: torch.tensor, shape=(-1, 4, -1)
+		A one-hot encoded sequence input to the model.
+
+	args: tuple or None, optional
+		Additional arguments to pass into the forward function. If None,
+		pass nothing additional in. Default is None.
+
+	model_output: str, "profile" or "count", optional
+		If "profile", wrap the model using ProfileWrapper and calculate
+		attributions with respect to the profile. If "count", wrap the model
+		using CountWrapper and calculate attributions with respect to the
+		count. Default is "profile".
+
+	hypothetical: bool, optional
+		Whether to return attributions for all possible characters at each
+		position or only for the character that is actually at the sequence.
+		Practically, whether to return the returned attributions from captum
+		with the one-hot encoded sequence. Default is False.
+
+	n_shuffles: int, optional
+		The number of dinucleotide shuffles to return. Default is 10.
+
+	batch_size: int, optional
+		The number of attributions to calculate at the same time. This is
+		limited by GPU memory. Default is 8.
+
+	return_references: bool, optional
+		Whether to return the references that were generated during this
+		process.
+
+	verbose: bool, optional
+		Whether to display a progress bar.
+
+	random_state: int or None or numpy.random.RandomState, optional
+		The random seed to use to ensure determinism. If None, the
+		process is not deterministic. Default is None. 
+
+
+	Returns
+	-------
+	attributions: torch.tensor
+		The attributions calculated for each input sequence, with the same
+		shape as the input sequences.
+
+	references: torch.tensor, optional
+		The references used for each input sequence, with the shape
+		(n_input_sequences, n_shuffles, 4, length). Only returned if
+		`return_references = True`. 
+	"""
+
+	if model_output == "profile":
+		wrapper = ProfileWrapper(model)
+	elif model_output == "count":
+		wrapper = CountWrapper(model)
+	else:
+		raise ValueError("model_output must be one of 'profile' or 'count'.")
+
+	attributions = []
+	references_ = []
+
+	for i in trange(0, len(X), batch_size):
+		s, e = i, min(i+batch_size, len(X))
+		_X = X[s:e].cuda()
+
+		# Calculate references
+		if isinstance(references, torch.Tensor):
+			_references = references[s:e]
+		elif references == 'dinucleotide':
+			_references = torch.stack([dinucleotide_shuffle(X[j].cpu(), 
+				n_shuffles=n_shuffles, random_state=random_state).to(
+				X.dtype) for j in range(s, e)]).cuda()
+		elif references == 'zero':
+			_references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
+				dtype=X.dtype, device='cuda')
+		elif references == 'freq':
+			_references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
+				dtype=X.dtype, device='cuda') + 0.25			
+
+		# Extract extra arguments
+		if args is None:
+			args_ = None
+		else:
+			args_ = tuple([arg[s:e].cuda() for arg in args])
+
+		ig = DeepLiftShap(wrapper, attribution_func=attribution_func)				
+		attr = ig.attribute(_X, _references, args=args_)
+		attr = attr if hypothetical else attr * _X
+
+		if return_references:
+			references_.append(_references.cpu().detach())
+
+		attributions.append(attr.cpu().detach())
+
+	attributions = torch.cat(attributions)
+
+	if return_references:
+		return attributions, torch.cat(references_)
 	return attributions
 
 

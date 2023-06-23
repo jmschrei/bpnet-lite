@@ -5,12 +5,13 @@ import time
 import numpy
 import torch
 
+from .bpnet import BPNet
 from .losses import MNLLLoss
 from .losses import log1pMSELoss
-
 from .performance import calculate_performance_measures
-
 from .logging import Logger
+
+from tqdm import trange
 
 
 class ChromBPNet(torch.nn.Module):
@@ -94,7 +95,7 @@ class ChromBPNet(torch.nn.Module):
 		return y_profile, y_counts
 
 	@torch.no_grad()
-	def predict(self, X, X_ctl=None, batch_size=16):
+	def predict(self, X, X_ctl=None, batch_size=16, verbose=False):
 		"""A method for making batched predictions.
 
 		This method will take in a large number of cell states and provide
@@ -107,8 +108,14 @@ class ChromBPNet(torch.nn.Module):
 		X: torch.tensor, shape=(-1, 4, 2114)
 			A one-hot encoded sequence tensor.
 
+		X_ctl: dummy
+			A dummy variable to make compatible with command-line tools. Ignore.
+
 		batch_size: int, optional
 			The number of elements to use in each batch. Default is 64.
+
+		verbose: bool
+			Whether to print a progress bar during predictions.
 
 
 		Returns
@@ -118,7 +125,7 @@ class ChromBPNet(torch.nn.Module):
 		"""		
 
 		y_profile, y_counts = [], []
-		for start in range(0, len(X), batch_size):
+		for start in trange(0, len(X), batch_size, disable=not verbose):
 			y_profile_, y_counts_ = self(X[start:start+batch_size].cuda())
 			y_profile.append(y_profile_.cpu())
 			y_counts.append(y_counts_.cpu())
@@ -280,3 +287,42 @@ class ChromBPNet(torch.nn.Module):
 
 		torch.save(self, "{}.final.torch".format(self.name))
 		torch.save(self, "{}.accessibility.final.torch".format(self.name))
+
+	@classmethod
+	def from_chrombpnet_lite(self, bias_model, accessibility_model, name):
+		"""Load a ChromBPNet model trained in ChromBPNet-lite.
+
+		Confusingly, ChromBPNet-lite is a package written by Surag Nair that
+		reorganized the ChromBPNet library and then was reintegrated back
+		into it. However, some ChromBPNet models are still around that were
+		trained using this package and this is a method for loading those
+		models, not the models trained using the ChromBPNet package and not
+		ChromBPNet models trained using this package.
+
+		This method takes in paths to a h5 file containing the weights of the
+		bias model and the accessibility model, both trained and whose outputs
+		are organized according to TensorFlow. The weights are loaded and
+		shaped into a PyTorch model and can be used as such.
+
+
+		Parameters
+		----------
+		bias model: str
+			The filename of the bias model.
+
+		accessibility_model: str
+			The filename of the accessibility model.
+
+		name: str
+			The name to use when training the model and outputting to a file.
+		
+
+		Returns
+		-------
+		model: bpnetlite.models.ChromBPNet
+			A PyTorch ChromBPNet model compatible with the bpnet-lite package.
+		"""
+
+		bias = BPNet.from_chrombpnet_lite(bias_model)
+		acc = BPNet.from_chrombpnet_lite(accessibility_model)
+		return ChromBPNet(bias, acc, name)

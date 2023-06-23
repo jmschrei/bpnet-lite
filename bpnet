@@ -136,7 +136,7 @@ default_predict_parameters = {
 }
 
 default_interpret_parameters = {
-	'batch_size': 64,
+	'batch_size': 1,
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
@@ -182,6 +182,7 @@ default_pipeline_parameters = {
 	'out_window': 1000,
 	'name': None,
 	'model': None,
+	'verbose': False,
 
 	# Data parameters
 	'batch_size': 64,
@@ -194,37 +195,80 @@ default_pipeline_parameters = {
 	'verbose': False,
 	'min_counts': 0,
 	'max_counts': 99999999,
-	'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
-		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
-	'validation_chroms': ['chr8', 'chr10'],
-	'random_state': None,
 
-	# Input file parameters
 	'sequences': None,
 	'loci': None,
-	'negatives': None,
 	'signals': None,
 	'controls': None,
 
-	# Output file parameters
-	'profile_filename': None,
-	'counts_filename': None,
+	# Fit parameters
+	'fit_parameters': {
+		'batch_size': 64,
+		'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+			'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 
+			'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+		'validation_chroms': ['chr8', 'chr10'],
+		'sequences': None,
+		'loci': None,
+		'signals': None,
+		'controls': None,	
+		'verbose': None,
+		'random_state': None,
+	},
 
-	'output': 'profile',
-	'ohe_filename': None,
-	'attr_filename': None,
-	'n_shuffles':20,
+	# Predict parameters
+	'predict_parameters': {
+		'batch_size': 64,
+		'chroms': ['chr8', 'chr10'],
+		'profile_filename': None,
+		'counts_filename': None,
+		'sequences': None,
+		'loci': None,
+		'signals': None,
+		'controls': None,
+		'verbose': None,
+	},
 
-	'n_seqlets': 100000,
-	'modisco_filename': None,
-	'modisco_motifs': None,
 
-	'n_loci': None,
-	'shuffle': False,
-	'marginalization_filename': None,
-	'marginalization_motifs': None,
-	'minimal': True
+	# Interpret parameters
+	'interpret_parameters': {
+		'batch_size': 1,
+		'chroms': ['chr8', 'chr10'],
+		'output': 'profile',
+		'loci': None,
+		'ohe_filename': None,
+		'attr_filename': None,
+		'n_shuffles': None,
+		'random_state': None,
+		'verbose': None
+
+	},
+
+	# Modisco parameters
+	'modisco_motifs_parameters': {
+		'n_seqlets': 100000,
+		'output_filename': None,
+		'verbose': None
+	},
+
+	# Modisco report parameters
+	'modisco_report_parameters': {
+		'motifs': None,
+		'output_folder': None,
+		'verbose': None
+	},
+
+	# Marginalization parameters
+	'marginalize_parameters': {
+		'loci': None,
+		'n_loci': 100,
+		'shuffle': False,
+		'random_state': None,
+		'output_folder': None,
+		'motifs': None,
+		'minimal': True,
+		'verbose': None
+	} 
 }
 
 
@@ -408,7 +452,8 @@ elif args.cmd == 'interpret':
 
 	X_attr = calculate_attributions(model, X, args=X_ctl,
 		model_output=parameters['output'], hypothetical=True, 
-		n_shuffles=parameters['n_shuffles'], 
+		n_shuffles=parameters['n_shuffles'],
+		batch_size=parameters['batch_size'],
 		random_state=parameters['random_state'],
 		verbose=parameters['verbose'])
 
@@ -449,30 +494,17 @@ elif args.cmd == 'marginalize':
 elif args.cmd == 'pipeline':
 	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
 
-	names = ['profile_filename', 'counts_filename', 'ohe_filename', 
-		'attr_filename', 'modisco_filename', 'marginalization_filename']
-	for name in names[:4]:
-		if parameters[name] is None:
-			parameters[name] = "{}.{}.npz".format(parameters['name'], 
-				name.split("_")[0])
-	
-	for name in names[4:]:
-		if parameters[name] is None:
-			parameters[name] = "{}_{}/".format(parameters['name'], 
-				name.split("_")[0])
-
-
 	# Step 1: Fit a BPNet model to the provided data
 	if parameters['verbose']:
 		print("Step 1: Fitting a BPNet model")
 
-	loci = parameters['loci']
-	loci = loci if isinstance(loci, list) else [loci]
-	negatives = parameters['negatives']
-	negatives = negatives if isinstance(negatives, list) else [negatives]
 
-	fit_parameters = {key: parameters[key] for key in default_fit_parameters}
-	fit_parameters['loci'] = loci + negatives
+	fit_parameters = {key: parameters.get(key, None) for key in 
+		default_fit_parameters}
+	for parameter, value in parameters['fit_parameters'].items():
+		if value is not None:
+			fit_parameters[parameter] = value
+
 
 	if parameters['model'] is None:
 		name = '{}.bpnet.fit.json'.format(parameters['name'])
@@ -488,16 +520,17 @@ elif args.cmd == 'pipeline':
 	if parameters['verbose']:
 		print("\nStep 2: Making predictions")
 
-	predict_parameters = {key: parameters[key] for key in 
+	predict_parameters = {key: parameters.get(key, None) for key in 
 		default_predict_parameters if key in parameters}
-	predict_parameters['chroms'] = parameters['validation_chroms']
-	predict_parameters['model'] = parameters['model']
+	for parameter, value in parameters['predict_parameters'].items():
+		if value is not None:
+			predict_parameters[parameter] = value
 
-	if parameters['profile_filename'] is None:
+	if 'profile_filename' not in predict_parameters:
 		predict_parameters['profile_filename'] = '{}.y_profiles.npz'.format(
 			parameters['name'])
 
-	if parameters['counts_filename'] is None:
+	if 'counts_filename' not in predict_parameters:
 		predict_parameters['counts_filename'] = '{}.y_counts.npz'.format(
 			parameters['name'])
 
@@ -512,16 +545,17 @@ elif args.cmd == 'pipeline':
 	if parameters['verbose']:
 		print("\nStep 3: Calculating attributions")
 
-	interpret_parameters = {key: parameters[key] for key in 
+	interpret_parameters = {key: parameters.get(key, None) for key in 
 		default_interpret_parameters if key in parameters}
-	interpret_parameters['chroms'] = parameters['validation_chroms']
-	interpret_parameters['model'] = parameters['model']
+	for parameter, value in parameters['interpret_parameters'].items():
+		if value is not None:
+			interpret_parameters[parameter] = value
 
-	if interpret_parameters['ohe_filename'] is None:
+	if 'ohe_filename' not in interpret_parameters:
 		interpret_parameters['ohe_filename'] = '{}.ohe.npz'.format(
 			parameters['name'])
 
-	if interpret_parameters['attr_filename'] is None:
+	if 'attr_filename' not in interpret_parameters:
 		interpret_parameters['attr_filename'] = '{}.attr.npz'.format(
 			parameters['name'])
 
@@ -537,43 +571,53 @@ elif args.cmd == 'pipeline':
 	if parameters['verbose']:
 		print("\nStep 4: TF-MoDISco motifs")
 
-	cmd = "modisco motifs -s {} -a {} -n {}".format(
+	modisco_parameters = parameters['modisco_motifs_parameters']
+
+	if modisco_parameters['output_filename'] is None:
+		modisco_parameters['output_filename'] = '{}_modisco_results.h5'.format(
+			parameters['name'])
+
+	cmd = "modisco motifs -s {} -a {} -n {} -o {}".format(
 		interpret_parameters['ohe_filename'], 
 		interpret_parameters['attr_filename'],
-		parameters['n_seqlets'])
-	if parameters['verbose']:
+		modisco_parameters['n_seqlets'],
+		modisco_parameters['output_filename'])
+	if modisco_parameters['verbose']:
 		cmd += ' -v'
 
-	modisco_name = "{}_modisco_results.h5".format(parameters['name'])
 	os.system(cmd)
-	os.system("mv modisco_results.h5 {}".format(modisco_name))
 
 
 	# Step 5: Generate the tf-modisco report
 	modisco_name = "{}_modisco_results.h5".format(parameters['name'])
-	if parameters['verbose']:
-		print("\nStep 5: TF-MoDISco reports")
 
-	if parameters['modisco_filename'] is None:
-		parameters['modisco_filename'] = '{}_modisco/'.format(
+	report_parameters = parameters['modisco_report_parameters']
+	if report_parameters['verbose'] is None:
+		report_parameters['verbose'] = parameters['verbose']
+
+	if report_parameters['output_folder'] is None:
+		report_parameters['output_folder'] = '{}_modisco/'.format(
 			parameters['name'])
 
-	os.system('modisco report -i {0} -o {1} -s {1} -m {2}'.format(modisco_name, 
-		parameters['modisco_filename'], parameters['modisco_motifs']))
+	if report_parameters['verbose']:
+		print("\nStep 5: TF-MoDISco reports")
+
+	os.system('modisco report -i {0} -o {1} -s {1} -m {2}'.format(
+		modisco_parameters['output_filename'], 
+		report_parameters['output_folder'], report_parameters['motifs']))
 	
 
 	# Step 6: Marginalization experiments
 	if parameters['verbose']:
 		print("\nStep 6: Run marginalizations")
 
-	marginalize_parameters = {key: parameters[key] for key in 
+	marginalize_parameters = {key: parameters.get(key, None) for key in 
 		default_marginalize_parameters if key in parameters}
-	marginalize_parameters['chroms'] = parameters['validation_chroms']
-	marginalize_parameters['loci'] = parameters['negatives']
-	marginalize_parameters['output_filename'] = parameters['marginalization_filename']
-	marginalize_parameters['motifs'] = parameters['marginalization_motifs']
+	for parameter, value in parameters['marginalize_parameters'].items():
+		if value is not None:
+			marginalize_parameters[parameter] = value
 
-	if marginalize_parameters['output_filename'] is None:
+	if 'output_filename' not in marginalize_parameters:
 		marginalize_parameters['output_filename'] = '{}_marginalize/'.format(
 			parameters['name'])
 
@@ -584,4 +628,3 @@ elif args.cmd == 'pipeline':
 			indent=4))
 
 	os.system("bpnet marginalize -p {}".format(name))
-

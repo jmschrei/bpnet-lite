@@ -1,6 +1,6 @@
 # io.py
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
-# Code adapted from Avanti Shrikumar and Ziga Avsec
+# Code adapted from Alex Tseng, Avanti Shrikumar, and Ziga Avsec
 
 import numpy
 import torch
@@ -10,6 +10,55 @@ import pyfaidx
 import pyBigWig
 
 from tqdm import tqdm
+from numba import njit
+
+
+def read_meme(filename):
+	"""Read a MEME file and return a dictionary of PWMs.
+
+	This method takes in the filename of a MEME-formatted file to read in
+	and returns a dictionary of the PWMs where the keys are the metadata
+	line and the values are the PWMs.
+
+
+	Parameters
+	----------
+	filename: str
+		The filename of the MEME-formatted file to read in
+
+
+	Returns
+	-------
+	motifs: dict
+		A dictionary of the motifs in the MEME file.
+	"""
+
+	motifs = {}
+
+	with open(filename, "r") as infile:
+		motif, width, i = None, None, 0
+
+		for line in infile:
+			if motif is None:
+				if line[:5] == 'MOTIF':
+					motif = line.split()[1]
+				else:
+					continue
+
+			elif width is None:
+				if line[:6] == 'letter':
+					width = int(line.split()[5])
+					pwm = numpy.zeros((width, 4))
+
+			elif i < width:
+				pwm[i] = list(map(float, line.split()))
+				i += 1
+
+			else:
+				motifs[motif] = pwm
+				motif, width, i = None, None, 0
+
+	return motifs
 
 
 def one_hot_encode(sequence, alphabet=['A', 'C', 'G', 'T'], dtype='int8', 
@@ -59,10 +108,6 @@ def one_hot_encode(sequence, alphabet=['A', 'C', 'G', 'T'], dtype='int8',
 	"""
 
 	d = verbose is False
-
-	if isinstance(sequence, str):
-		sequence = list(sequence)
-
 	alphabet_lookup = {char: i for i, char in enumerate(alphabet)}
 
 	ohe = numpy.zeros((len(sequence), len(alphabet)), dtype=dtype)
@@ -70,7 +115,7 @@ def one_hot_encode(sequence, alphabet=['A', 'C', 'G', 'T'], dtype='int8',
 		idx = alphabet_lookup.get(char, -1)
 		if idx != -1:
 			ohe[i, idx] = 1
-
+	
 	return ohe
 
 
@@ -271,12 +316,14 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 
 	loci_dfs = []
 	for i, df in enumerate(loci):
-	    if isinstance(df, str):
-	        df = pandas.read_csv(df, sep='\t', usecols=[0, 1, 2], 
-	            header=None, index_col=False, names=names)
-	        df['idx'] = numpy.arange(len(df)) * len(loci) + i
+		if isinstance(df, str):
+			df = pandas.read_csv(df, sep='\t', usecols=[0, 1, 2], 
+				header=None, index_col=False, names=names)
+		elif isinstance(df, pandas.DataFrame):
+			df = df.iloc[:, [0, 1, 2]].copy()
 
-	    loci_dfs.append(df)
+		df['idx'] = numpy.arange(len(df)) * len(loci) + i
+		loci_dfs.append(df)
 
 	loci = pandas.concat(loci_dfs).set_index("idx").sort_index().reset_index(drop=True)
 
@@ -307,7 +354,6 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 
 	max_width = max(in_width, out_width)
 	loci_count = 0
-
 	for chrom, start, end in tqdm(loci.values, disable=d, desc=desc):
 		mid = start + (end - start) // 2
 
@@ -355,9 +401,9 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 		if isinstance(sequences, dict):
 			seq = sequences[chrom][start:end].T
 		else:
-			seq = one_hot_encode(sequences[chrom][start:end].seq.upper(), 
+			seq = one_hot_encode(sequences[chrom][start:end].seq.upper(),
 				alphabet=['A', 'C', 'G', 'T']).T
-		
+
 		seqs.append(seq)
 		loci_count += 1
 

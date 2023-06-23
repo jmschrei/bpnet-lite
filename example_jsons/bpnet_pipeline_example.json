@@ -5,51 +5,86 @@
 	"count_output_bias": true,
 	"in_window": 2114,
 	"out_window": 1000,
-	"name": "example",
-	"model": null,
-
+	"name": "spi1",
+	"model": "spi1.torch",
+	"verbose": false,
 	"batch_size": 64,
 	"max_jitter": 128,
 	"reverse_complement": true,
-	"max_epochs": 50,
+	"max_epochs": 5,
 	"validation_iter": 100,
 	"lr": 0.001,
 	"alpha": 1,
 	"verbose": true,
 	"min_counts": 0,
 	"max_counts": 99999999,
-	"training_chroms": ["chr2", "chr3", "chr4" "chr5", "chr6", "chr7", 
-		"chr9", "chr11", "chr12", "chr13", "chr14", "chr15", "chr16", "chr17", 
-		"chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
-	"validation_chroms": ["chr8", "chr10"],
-	"random_state": 0,
-
-	"sequences": "../../oak/common/hg38/hg38.fa",
-	"loci": "../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
-	"negatives": "../../tfatlas/processed_data/ENCSR000BGW/gc_neg_only.bed.gz",
-    "signals":[
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_minus.bigWig"
+	"sequences": "../../../oak/common/hg38/hg38.fa",
+	"loci": null,
+	"signals": [
+       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_plus.bigWig", 
+       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_minus.bigWig"
     ],
-    "controls":[
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig"
+	"controls":[
+       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_control_plus.bigWig", 
+       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_control_minus.bigWig"
     ],
+	"fit_parameters": {
+		"batch_size": 64,
+		"training_chroms": ["chr2", "chr3", "chr4", "chr5", "chr6", "chr7", 
+			"chr9", "chr11", "chr12", "chr13", "chr14", "chr15", "chr16", 
+			"chr17", "chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
+		"validation_chroms": ["chr8", "chr10"],
+		"sequences": null,
+		"loci": [
+			"../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
+			"../../../tfatlas/processed_data/ENCSR000BGQ/gc_neg_only.bed.gz"
+		],
+		"signals": null,
+		"controls": null,	
+		"verbose": null,
+		"random_state": null
+	},
+	"predict_parameters": {
+		"batch_size": 64,
+		"chroms": ["chr8", "chr10"],
+		"profile_filename": null,
+		"counts_filename": null,
+		"sequences": null,
+		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
+		"signals": null,
+		"controls": null,
+		"verbose": null
+	},
+	"interpret_parameters": {
+		"batch_size": 1,
+		"output": "profile",
+		"chroms": ["chr8"],
+		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
+		"ohe_filename": null,
+		"attr_filename": null,
+		"n_shuffles": 20,
+		"random_state": null,
+		"verbose": null
 
-	"profile_filename": null,
-	"counts_filename": null,
-
-	"output": "profile",
-	"ohe_filename": null,
-	"attr_filename": null,
-	"n_shuffles":20,
-
-	"n_seqlets": 100000,
-	"modisco_filename": null,
-
-	"motifs": "motifs.meme",
-	"n_loci": 100,
-	"shuffle": false,
-	"marginalization_filename": null,
-	"minimal": true
+	},
+	"modisco_motifs_parameters": {
+		"n_seqlets": 100000,
+		"output_filename": null,
+		"verbose": null
+	},
+	"modisco_report_parameters": {
+		"motifs": "motifs.meme",
+		"output_folder": null,
+		"verbose": null
+	},
+	"marginalize_parameters": {
+		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/gc_neg_only.bed.gz",
+		"n_loci": 100,
+		"shuffle": false,
+		"random_state": null,
+		"output_folder": null,
+		"motifs": "ctcf.gata2.sp1.meme",
+		"minimal": true,
+		"verbose": null
+	} 
 }
