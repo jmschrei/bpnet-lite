@@ -60,35 +60,41 @@ chrombpnet pipeline -p chrombpnet_pipeline_example.json
 
 ## Python API
 
-The Python API is made up of a small number of components that can be customized or re-organized. Start off by specifying where your data will be.
+If you'd rather train and use BPNet/ChromBPNet models programmatically, you can use the Python API. The command-line tool is made up of wrappers around these methods and functions, so please take a look if you'd like additional documentation on how to get started.
+
+The first step is loading data. Much like with the command-line tool, if you're using the built-in data loader then you need to specify where the FASTA containing sequences, a BED file containing loci and bigwig files to train on are. The signals need to be provided in a list and the index of each bigwig in the list will correspond to a model output. Optionally, you can also provide control bigwigs. See the BPNet paper for how these control bigwigs get used during training. 
 
 ```python
 import torch
 
 from bpnetlite.io import extract_loci
-from bpnetlite.io import PeakGenerator
+from bpnetlite.io import LocusGenerator
 from bpnetlite import BPNet
 
-peaks = 'test/CTCF.peaks.bed'
-seqs = '../../oak/common/hg38/hg38.fa'
-signals = ['test/CTCF.plus.bw', 'test/CTCF.minus.bw']
-controls = ['test/CTCF.plus.ctl.bw', 'test/CTCF.minus.ctl.bw']
+peaks = 'test/CTCF.peaks.bed' # A set of loci to train on.
+seqs = '../../oak/common/hg38/hg38.fa' # A set of sequences to train on
+signals = ['test/CTCF.plus.bw', 'test/CTCF.minus.bw'] # A set of bigwigs
+controls = ['test/CTCF.plus.ctl.bw', 'test/CTCF.minus.ctl.bw'] # A set of bigwigs
+```
 
+After specifying filepaths for each of these, you can create the data generator. If you have a set of chromosomes you'd like to use for training, you can pass those in as well. They must match exactly with the names of chromsomes given in the BED file. 
+
+```python
 training_chroms = ['chr{}'.format(i) for i in range(1, 17)]
+
+training_data = LocusGenerator(peaks, seqs, signals, controls, chroms=training_chroms)
+```
+
+The `LocusGenerator` function is a wrapper around several functions that extract data, pass them into a generator that applies shifts and shuffling, and pass that generator into a PyTorch data loader object for use during training. The end result is an object that can be directly iterated over while training a bpnet-lite model. 
+
+Although wrapping all that functionality is good for the training set, the validation set should remain constant during training. Hence, one should only use the `extract_loci` function that is the first step when handling the training data.
+
+```python
 valid_chroms = ['chr{}'.format(i) for i in range(18, 23)]
-```
 
-Next, you should load up your peaks by passing in the peak loci, sequences, signals, and control tracks. If `controls=None` then no controls are passed into the model. Likewise, the length of `signals` should be equal to the number of outputs in your model and can be just one if dealing with unstranded data.
-
-```python
-training_data = PeakGenerator(peaks, seqs, signals, controls, chroms=training_chroms)
-```
-
-The `PeakGenerator` function is a wrapper around several functions which extract data, pass it into a data generator, and pass that into a PyTorch data loader object. The end result is an object that can be directly iterated over while training a model. However, this great for a validation set because we want that to be fixed and the `PeakGenerator` object has options to jitter the data, randomly reverse complement it, and randomly sample from the peaks. Instead, we want to just use the `extract_peaks` function to extract the raw data at these locations. Note that, if there are no controls, you should exclude `X_ctl_valid`. 
-
-```python
 X_valid, y_valid, X_ctl_valid = extract_peaks(peaks, seqs, signals, controls, chroms=valid_chroms, max_jitter=0)
 ```
+Note that this function can be used without control tracks and, in that case, will only return two arguments. Further, it can used with only a FASTA and will only return one argument in that case: the extracted sequences. 
 
 Now, we can define the model. If you want to change the architecture, check out the documentation.
 
