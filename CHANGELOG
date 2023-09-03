@@ -2,6 +2,21 @@
 Release History
 ===============
 
+Version 0.5.2
+==============
+
+Highlights
+----------
+
+	- Fixed issue where non-linear operations in DeepLiftShap were not
+	registered correctly and hence causing minor divergences. Through the
+	use of an ugly wrapper object this has been fixed.
+	- Added in `print_convergence_deltas` and `warning_threshold` to the
+	`calculate_attributions` function and the `DeepLiftShap` object. The first
+	will print convergence deltas for every example that gets explained and the
+	second will raise a warning if the divergence is higher than it.
+
+
 Version 0.5.0
 ==============
 

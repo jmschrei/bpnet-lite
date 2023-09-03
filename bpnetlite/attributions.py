@@ -8,7 +8,9 @@ import torch
 import pandas
 import logomaker
 
+from tqdm import tqdm
 from tqdm import trange
+
 from captum.attr import DeepLiftShap as CaptumDeepLiftShap
 from numba import NumbaDeprecationWarning
 
@@ -36,15 +38,43 @@ class DeepLiftShap():
 	model: bpnetlite.BPNet or bpnetlite.ChromBPNet
 		A BPNet or ChromBPNet module as implemented in this repo.
 
+	attribution_func: function or None, optional
+		This function is used to aggregate the gradients after calculation.
+		Useful when trying to handle the implications of one-hot encodings. If
+		None, return the gradients as calculated. Default is None.
+
 	eps: float, optional
 		An epsilon with which to threshold gradients to ensure that there
 		isn't an explosion. Default is 1e-10.
+
+	warning_threshold: float, optional
+		A threshold on the convergence delta that will always raise a warning
+		if the delta is larger than it. Normal deltas are in the range of
+		1e-6 to 1e-8. Note that convergence deltas are calculated on the
+		gradients prior to the attribution_func being applied to them. Default 
+		is 0.001. 
+
+	verbose: bool, optional
+		Whether to print the convergence delta for each example that is
+		explained, regardless of whether it surpasses the warning threshold.
+		Note that convergence deltas are calculated on the gradients prior to 
+		the attribution_func being applied to them. Default is False.
 	"""
 
-	def __init__(self, model, attribution_func=None, eps=1e-10):
+	def __init__(self, model, attribution_func=None, eps=1e-6, 
+		warning_threshold=0.001, verbose=False):
+		for module in model.named_modules():
+			if isinstance(module[1], torch.nn.modules.pooling._MaxPoolNd):
+				raise ValueError("Cannot use this implementation of " + 
+					"DeepLiftShap with max pooling layers. Please use the " +
+					"implementation in Captum.")
+
 		self.model = model
 		self.attribution_func = attribution_func
 		self.eps = eps
+		self.warning_threshold = warning_threshold
+		self.verbose = verbose
+
 		self.forward_handles = []
 		self.backward_handles = []
 
@@ -75,8 +105,19 @@ class DeepLiftShap():
 				else:
 					outputs = self.model(inputs_)
 
-				outputs = torch.chunk(outputs, 2)[0].sum()
-				gradients = torch.autograd.grad(outputs, inputs)[0]
+				outputs_ = torch.chunk(outputs, 2)[0].sum()
+				gradients = torch.autograd.grad(outputs_, inputs)[0]
+
+			output_diff = torch.sub(*torch.chunk(outputs[:,0], 2))
+			input_diff = torch.sum((inputs - baselines) * gradients, dim=(1, 2)) 
+			convergence_deltas = output_diff - input_diff
+			
+			if any(convergence_deltas > self.warning_threshold):
+				raise Warning("Convergence deltas too high: ", 
+					convergence_deltas)
+
+			if self.verbose:
+				print(convergence_deltas)
 
 			# Process the gradients to get attributions
 			if self.attribution_func is None:
@@ -120,7 +161,7 @@ class DeepLiftShap():
 
 	def _can_register_hook(self, module):
 		return not (len(module._backward_hooks) > 0 or not isinstance(module, 
-			torch.nn.ReLU))
+			(torch.nn.ReLU, _ProfileLogitScaling)))
 
 	def _register_hooks(self, module, attribute_to_layer_input=True):
 		if not self._can_register_hook(module) or (
@@ -136,6 +177,32 @@ class DeepLiftShap():
 		self.forward_handles.append(forward_handle)
 		self.forward_handles.append(pre_forward_handle)
 		self.backward_handles.append(backward_handle)
+
+
+class _ProfileLogitScaling(torch.nn.Module):
+	"""This ugly class is necessary because of Captum.
+
+	Captum internally registers classes as linear or non-linear. Because the
+	profile wrapper performs some non-linear operations, those operations must
+	be registered as such. However, the inputs to the wrapper are not the
+	logits that are being modified in a non-linear manner but rather the
+	original sequence that is subsequently run through the model. Hence, this
+	object will contain all of the operations performed on the logits and
+	can be registered.
+
+
+	Parameters
+	----------
+	logits: torch.Tensor, shape=(-1, -1)
+		The logits as they come out of a Chrom/BPNet model.
+	"""
+
+	def __init__(self):
+		super(_ProfileLogitScaling, self).__init__()
+
+	def forward(self, logits):
+		y = torch.exp(logits - torch.logsumexp(logits, dim=-1, keepdims=True))
+		return logits * y.detach()
 
 
 class ProfileWrapper(torch.nn.Module):
@@ -156,15 +223,15 @@ class ProfileWrapper(torch.nn.Module):
 	def __init__(self, model):
 		super(ProfileWrapper, self).__init__()
 		self.model = model
+		self.scaling = _ProfileLogitScaling()
 
 	def forward(self, X, X_ctl=None, **kwargs):
 		logits = self.model(X, X_ctl, **kwargs)[0]
 		logits = logits.reshape(X.shape[0], -1)
 		logits = logits - torch.mean(logits, dim=-1, keepdims=True)
-		l = torch.clone(logits).detach()
 
-		y = torch.exp(l - torch.logsumexp(l, dim=-1, keepdims=True))
-		return (logits * y).sum(axis=-1, keepdims=True)
+		y = self.scaling(logits)
+		return y.sum(axis=-1, keepdims=True)
 
 
 class CountWrapper(torch.nn.Module):
@@ -325,57 +392,31 @@ def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 	return shuffled_sequences
 
 
-def old_calculate_attributions(model, X, args=None, model_output="profile", 
-	hypothetical=False, n_shuffles=20, return_references=False, verbose=False, 
+def create_references(X, algorithm='dinucleotide', n_shuffles=20, 
 	random_state=None):
-	"""A deprecated version using the Captum codebase.
+	"""Generate references for a batch of sequences.
 
-	Calculate attributions using DeepLift/Shap and a given model. 
-
-	This function will calculate DeepLift/Shap attributions on a set of
-	sequences. It assumes that the model returns "logits" in the first output,
-	not softmax probabilities, and count predictions in the second output.
-	It will create GC-matched negatives to use as a reference and proceed
-	using the given batch size.
+	This function will take in a batch of sequences and return a tensor of
+	references given the specified strategy. The returned tensor will have an
+	additional dimension corresponding to the number of shuffles.
 
 
 	Parameters
 	----------
-	model: torch.nn.Module
-		The model to use, either BPNet or one of it's variants.
-
 	X: torch.tensor, shape=(-1, 4, -1)
 		A one-hot encoded sequence input to the model.
 
-	args: tuple or None, optional
-		Additional arguments to pass into the forward function. If None,
-		pass nothing additional in. Default is None.
-
-	model_output: str, "profile" or "count", optional
-		If "profile", wrap the model using ProfileWrapper and calculate
-		attributions with respect to the profile. If "count", wrap the model
-		using CountWrapper and calculate attributions with respect to the
-		count. Default is "profile".
-
-	hypothetical: bool, optional
-		Whether to return attributions for all possible characters at each
-		position or only for the character that is actually at the sequence.
-		Practically, whether to return the returned attributions from captum
-		with the one-hot encoded sequence. Default is False.
+	algorithm: "dinucleotide", "freq", "zeros", torch.Tensor
+		The algorithm to use for generating references. Can be "dinucleotide",
+		"freq", or "zero". If "dinucleotide", generate dinucleotide shuffled 
+		sequences for each input sequence. If "freq", set each value to
+		0.25. If "zeros", set each value to 0. If a tensor is passed in, assume
+		that it is the references being passed by the user and simply return it.
+		Default is 'dinucleotide'.
 
 	n_shuffles: int, optional
-		The number of dinucleotide shuffles to return. Default is 10.
-
-	batch_size: int, optional
-		The number of attributions to calculate at the same time. This is
-		limited by GPU memory. Default is 8.
-
-	return_references: bool, optional
-		Whether to return the references that were generated during this
-		process.
-
-	verbose: bool, optional
-		Whether to display a progress bar.
+		The number of dinucleotide shuffles to return. Only needed when
+		algorithm="dinucleoide". Default is 20.
 
 	random_state: int or None or numpy.random.RandomState, optional
 		The random seed to use to ensure determinism. If None, the
@@ -384,62 +425,124 @@ def old_calculate_attributions(model, X, args=None, model_output="profile",
 
 	Returns
 	-------
-	attributions: torch.tensor
-		The attributions calculated for each input sequence, with the same
-		shape as the input sequences.
-
-	references: torch.tensor, optional
-		The references used for each input sequence, with the shape
-		(n_input_sequences, n_shuffles, 4, length). Only returned if
-		`return_references = True`. 
+	_references: torch.tensor, shape=(-1, 4, -1)
+		A one-hot encoded sequence of shuffles.
 	"""
 
-	if model_output == "profile":
-		wrapper = ProfileWrapper(model)
-	elif model_output == "count":
-		wrapper = CountWrapper(model)
+	if algorithm == 'dinucleotide':
+		references = torch.stack([dinucleotide_shuffle(x.cpu(), 
+			n_shuffles=n_shuffles, random_state=random_state).to(
+			X.dtype) for x in X]).to(X.device)
+	elif algorithm == 'zero':
+		references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
+			dtype=X.dtype, device=X.device)
+	elif algorithm == 'freq':
+		references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
+			dtype=X.dtype, device=X.device) + 0.25	
 	else:
-		raise ValueError("model_output must be one of 'profile' or 'count'.")
+		raise ValueError("Algorithm must be one of " +
+			"'dinucleotide', 'zero', or 'freq'.")
 
-	X = X.cuda()
+	return references
 
-	attributions = []
-	references = []
-	with torch.no_grad():
-		for i in trange(len(X), disable=not verbose):
-			ig = CaptumDeepLiftShap(wrapper)
 
-			reference = dinucleotide_shuffle(X[i].cpu(), n_shuffles=n_shuffles, 
-				random_state=random_state).to(X.dtype).cuda()
+@torch.no_grad()
+def ism(model, X_0, args=None, batch_size=128, verbose=False):
+	"""In-silico mutagenesis saliency scores. 
+
+	This function will perform in-silico mutagenesis in a naive manner, i.e.,
+	where each input sequence has a single mutation in it and the entirety
+	of the sequence is run through the given model. It returns the ISM score,
+	which is a vector of the L2 difference between the reference sequence 
+	and the perturbed sequences with one value for each output of the model.
+
+	Parameters
+	----------
+	model: torch.nn.Module
+		The model to use.
+
+	X_0: torch.tensor, shape=(batch_size, 4, seq_len)
+		The one-hot encoded sequence to calculate saliency for.
+
+	args: tuple or None, optional
+		Additional arguments to pass into the forward function. If None,
+		pass nothing additional in. Default is None.
+
+	batch_size: int, optional
+		The size of the batches.
+
+	verbose: bool, optional
+		Whether to display a progress bar as positions are being mutated. One
+		display bar will be printed for each sequence being analyzed. Default
+		is False.
+
+	Returns
+	-------
+	X_ism: torch.tensor, shape=(batch_size, 4, seq_len)
+		The saliency score for each perturbation.
+	"""
+	
+	n_seqs, n_choices, seq_len = X_0.shape
+	X_idxs = X_0.argmax(axis=1)
+
+	n = seq_len*(n_choices-1)
+	X = torch.tile(X_0, (n, 1, 1))
+	X = X.reshape(n, n_seqs, n_choices, seq_len).permute(1, 0, 2, 3)
+
+	for i in range(n_seqs):
+		for k in range(1, n_choices):
+			idx = numpy.arange(seq_len)*(n_choices-1) + (k-1)
+
+			X[i, idx, X_idxs[i], numpy.arange(seq_len)] = 0
+			X[i, idx, (X_idxs[i]+k) % n_choices, numpy.arange(seq_len)] = 1
+
+
+	model = model.eval()
+
+	if args is None:
+		reference = model(X_0).unsqueeze(1)
+	else:
+		reference = model(X_0, *args).unsqueeze(1)
+
+	starts = numpy.arange(0, X.shape[1], batch_size)
+	isms = []
+	for i in range(n_seqs):
+		ism = []
+		for start in tqdm(starts, disable=not verbose):
+			X_ = X[i, start:start+batch_size].cuda()
 
 			if args is None:
-				args_ = None
+				y = model(X_)
 			else:
-				args_ = tuple([arg[i:i+1].cuda() for arg in args])
-					
-			attr = ig.attribute(X[i:i+1], reference, target=0, 
-				additional_forward_args=args_, 
-				custom_attribution_func=hypothetical_attributions)
+				args_ = tuple(a[i:i+1] for a in args)
+				y = model(X_, *args_)
 
-			if not hypothetical:
-				attr = (attr * X[i:i+1])
-			
-			if return_references:
-				references.append(reference.unsqueeze(0))
+			ism.append(y - reference[i])
 
-			attributions.append(attr.cpu().detach())
+		ism = torch.cat(ism)
+		if len(ism.shape) > 1:
+			ism = ism.sum(dim=list(range(1, len(ism.shape))))
+		isms.append(ism)
 
-	attributions = torch.cat(attributions)
+	isms = torch.stack(isms)
+	isms = isms.reshape(n_seqs, seq_len, n_choices-1)
 
-	if return_references:
-		return attributions, torch.cat(references)
-	return attributions
+	j_idxs = torch.arange(n_seqs*seq_len)
+	X_ism = torch.zeros(n_seqs*seq_len, n_choices, device='cuda')
+	for i in range(1, n_choices):
+		i_idxs = (X_idxs.flatten() + i) % n_choices
+		X_ism[j_idxs, i_idxs] = isms[:, :, i-1].flatten()
 
+	X_ism = X_ism.reshape(n_seqs, seq_len, n_choices).permute(0, 2, 1)
+	X_ism = (X_ism - X_ism.mean(dim=1, keepdims=True))
+	return X_ism
+	
 
 def calculate_attributions(model, X, args=None, model_output="profile", 
 	attribution_func=hypothetical_attributions, hypothetical=False,
-	references='dinucleotide', n_shuffles=20, batch_size=32, 
-	return_references=False, verbose=False, random_state=None):
+	algorithm="deepliftshap", references='dinucleotide', n_shuffles=20, 
+	batch_size=32, return_references=False, warning_threshold=0.001, 
+	print_convergence_deltas=False, verbose=False, random_state=None):
 	"""Calculate attributions using DeepLift/Shap and a given model. 
 
 	This function will calculate DeepLift/Shap attributions on a set of
@@ -461,11 +564,11 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 		Additional arguments to pass into the forward function. If None,
 		pass nothing additional in. Default is None.
 
-	model_output: str, "profile" or "count", optional
-		If "profile", wrap the model using ProfileWrapper and calculate
-		attributions with respect to the profile. If "count", wrap the model
-		using CountWrapper and calculate attributions with respect to the
-		count. Default is "profile".
+	model_output: None, "profile" or "count", optional
+		If None, then no wrapper is applied to the model. If "profile", wrap 
+		the model using ProfileWrapper and calculate attributions with respect 
+		to the profile. If "count", wrap the model using CountWrapper and 
+		calculate attributions with respect to the count. Default is "profile".
 
 	hypothetical: bool, optional
 		Whether to return attributions for all possible characters at each
@@ -473,8 +576,19 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 		Practically, whether to return the returned attributions from captum
 		with the one-hot encoded sequence. Default is False.
 
+	algorithm: "deepliftshap" or "ism", optional
+		The algorithm to use to calculate attributions. Must be one of
+		"deepliftshap", which uses the DeepLiftShap object, or "ism", which
+		uses the naive_ism method. Default is "deepliftshap".
+
+	references: "dinucleotide", "freq", "zeros", optional
+		The reference to use when algorithm is "deepliftshap". If "dinucleotide"
+		generate dinucleotide shuffled sequences. If "freq", set each value to
+		0.25. If "zeros", set each value to 0.
+
 	n_shuffles: int, optional
-		The number of dinucleotide shuffles to return. Default is 10.
+		The number of dinucleotide shuffles to return. Only needed when
+		algorithm is "deepliftshap". Default is 10.
 
 	batch_size: int, optional
 		The number of attributions to calculate at the same time. This is
@@ -483,6 +597,17 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	return_references: bool, optional
 		Whether to return the references that were generated during this
 		process.
+
+	warning_threshold: float, optional
+		A threshold on the convergence delta that will always raise a warning
+		if the delta is larger than it. Normal deltas are in the range of
+		1e-6 to 1e-8. Note that convergence deltas are calculated on the
+		gradients prior to the attribution_func being applied to them. Default 
+		is 0.001. 
+
+	print_convergence_deltas: bool, optional
+		Whether to print the convergence deltas for each example when using
+		DeepLiftShap. Default is False.
 
 	verbose: bool, optional
 		Whether to display a progress bar.
@@ -504,51 +629,52 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 		`return_references = True`. 
 	"""
 
-	if model_output == "profile":
+	if model_output is None:
+		wrapper = model
+	elif model_output == "profile":
 		wrapper = ProfileWrapper(model)
 	elif model_output == "count":
 		wrapper = CountWrapper(model)
 	else:
-		raise ValueError("model_output must be one of 'profile' or 'count'.")
+		raise ValueError("model_output must be None, 'profile' or 'count'.")
 
 	attributions = []
 	references_ = []
+	dev = next(model.parameters()).device
 
-	for i in trange(0, len(X), batch_size):
+	for i in trange(0, len(X), batch_size, disable=not verbose):
 		s, e = i, min(i+batch_size, len(X))
-		_X = X[s:e].cuda()
+		_X = X[s:e].to(dev)
+		args_ = None if args is None else tuple([a[s:e].to(dev) for a in args])
 
-		# Calculate references
-		if isinstance(references, torch.Tensor):
-			_references = references[s:e]
-		elif references == 'dinucleotide':
-			_references = torch.stack([dinucleotide_shuffle(X[j].cpu(), 
-				n_shuffles=n_shuffles, random_state=random_state).to(
-				X.dtype) for j in range(s, e)]).cuda()
-		elif references == 'zero':
-			_references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
-				dtype=X.dtype, device='cuda')
-		elif references == 'freq':
-			_references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
-				dtype=X.dtype, device='cuda') + 0.25			
+		if algorithm == 'deepliftshap':
+			# Calculate references
+			if isinstance(references, torch.Tensor):
+				_references = references[s:e]
+			else:
+				_references = create_references(_X, algorithm=references, 
+					n_shuffles=n_shuffles)
 
-		# Extract extra arguments
-		if args is None:
-			args_ = None
+			# Run DeepLiftShap
+			dl = DeepLiftShap(wrapper, attribution_func=attribution_func, 
+				warning_threshold=warning_threshold, 
+				verbose=print_convergence_deltas)			
+			attr = dl.attribute(_X, _references, args=args_)
+		
+			if return_references:
+				references_.append(_references.cpu().detach())
+	
+		elif algorithm == 'ism':
+			attr = ism(wrapper, _X, args=args, verbose=False)
+		
 		else:
-			args_ = tuple([arg[s:e].cuda() for arg in args])
+			raise ValueError("Must pass in one of 'deepliftshap' or 'ism'.")
 
-		ig = DeepLiftShap(wrapper, attribution_func=attribution_func)				
-		attr = ig.attribute(_X, _references, args=args_)
 		attr = attr if hypothetical else attr * _X
-
-		if return_references:
-			references_.append(_references.cpu().detach())
-
 		attributions.append(attr.cpu().detach())
 
 	attributions = torch.cat(attributions)
-
+	
 	if return_references:
 		return attributions, torch.cat(references_)
 	return attributions
