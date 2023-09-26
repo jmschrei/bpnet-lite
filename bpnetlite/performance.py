@@ -189,8 +189,6 @@ def pearson_corr(arr1, arr2):
         The correlation for each element, calculated along the last axis.
     """
 
-    print(arr1.shape, arr2.shape, "pearson")
-
     mean1 = torch.mean(arr1, axis=-1).unsqueeze(-1)
     mean2 = torch.mean(arr2, axis=-1).unsqueeze(-1)
     dev1, dev2 = arr1 - mean1, arr2 - mean2

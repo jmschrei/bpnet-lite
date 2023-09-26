@@ -2,6 +2,18 @@
 Release History
 ===============
 
+
+Version 0.5.3
+==============
+
+Highlights
+----------
+
+	- Added in reading of TensorFlow-formatted ChromBPNet models from the
+	official repo using the `from_chrombpnet` commands to the BPNet and
+	ChromBPNet objects.
+
+
 Version 0.5.2
 ==============
 

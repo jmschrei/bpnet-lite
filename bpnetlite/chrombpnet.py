@@ -1,6 +1,7 @@
 # chrombpnet.py
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
+import h5py
 import time
 import numpy
 import torch
@@ -325,4 +326,38 @@ class ChromBPNet(torch.nn.Module):
 
 		bias = BPNet.from_chrombpnet_lite(bias_model)
 		acc = BPNet.from_chrombpnet_lite(accessibility_model)
+		return ChromBPNet(bias, acc, name)
+
+	@classmethod
+	def from_chrombpnet(self, bias_model, accessibility_model, name):
+		"""Load a ChromBPNet model trained using the official repository.
+
+		This method takes in the path to a .h5 file containing the full model,
+		i.e., the bias model AND the accessibility model. If you have two
+		files -- one for the bias model, and one for the accessibility model --
+		load them up as separate BPNet models and create a ChromBPNet object
+		afterwards.
+
+
+		Parameters
+		----------
+		bias model: str
+			The filename of the bias model.
+
+		accessibility_model: str
+			The filename of the accessibility model.
+
+		name: str
+			The name to use when training the model and outputting to a file.
+		
+
+		Returns
+		-------
+		model: bpnetlite.models.ChromBPNet
+			A PyTorch ChromBPNet model compatible with the bpnet-lite package.
+		"""
+
+
+		bias = BPNet.from_chrombpnet(bias_model)
+		acc = BPNet.from_chrombpnet(accessibility_model)
 		return ChromBPNet(bias, acc, name)
