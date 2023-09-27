@@ -3,7 +3,15 @@ Release History
 ===============
 
 
-Version 0.5.3
+Version 0.5.5
+==============
+
+Highlights
+----------
+
+	- Fixed an issue with ChromBPNet reading.
+
+Version 0.5.4
 ==============
 
 Highlights

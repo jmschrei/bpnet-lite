@@ -534,19 +534,18 @@ class BPNet(torch.nn.Module):
 			prefix = "wo_bias_"
 
 		namer = lambda prefix, suffix: '{0}{1}/{0}{1}'.format(prefix, suffix)
-		name = namer(prefix, "bpnet_{0}conv")
 		k, b = 'kernel:0', 'bias:0'
 
-		layer_names = []
+		n_layers = 0
 		for layer_name in w.keys():
 			try:
-				idx = int(layer_name.split("_")[1].replace("conv", ""))
-				layer_names.append(idx)
+				idx = int(layer_name.split("_")[-1].replace("conv", ""))
+				n_layers = max(n_layers, idx)
 			except:
 				pass
 
-		n_filters = w[name.format(1)][k].shape[2]
-		n_layers = max(layer_names)
+		name = namer(prefix, "bpnet_1conv")
+		n_filters = w[name][k].shape[2]
 
 		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
 			n_control_tracks=0, trimming=(2114-1000)//2)
@@ -556,6 +555,7 @@ class BPNet(torch.nn.Module):
 		convert_b = lambda x: torch.nn.Parameter(torch.tensor(x[:]))
 
 		iname = namer(prefix, 'bpnet_1st_conv')
+
 		model.iconv.weight = convert_w(w[iname][k])
 		model.iconv.bias = convert_b(w[iname][b])
 		model.iconv.padding = (21 - 1) // 2
@@ -563,9 +563,8 @@ class BPNet(torch.nn.Module):
 		for i in range(1, n_layers+1):
 			lname = namer(prefix, 'bpnet_{}conv'.format(i))
 
-			model.rconvs[i-2].weight = convert_w(w[lname][k])
-			model.rconvs[i-2].bias = convert_b(w[lname][b])
-
+			model.rconvs[i-1].weight = convert_w(w[lname][k])
+			model.rconvs[i-1].bias = convert_b(w[lname][b])
 
 		prefix = prefix + "bpnet_" if prefix != "" else ""
 
