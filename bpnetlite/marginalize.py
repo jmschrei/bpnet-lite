@@ -88,8 +88,8 @@ def marginalize(model, motif, X):
 
 	start = X.shape[-1] // 2 - len(motif) // 2
 	for i in range(len(motif)):
-		if motif_ohe[i].sum() > 0:
-			X_perturb[:, :, start+i] = motif_ohe[i]
+		if motif_ohe[:, i].sum() > 0:
+			X_perturb[:, :, start+i] = motif_ohe[:, i]
 
 	y_after_profile, y_after_counts = model.predict(X_perturb, X_ctl)
 	y_after_profile = torch.nn.functional.softmax(y_after_profile, dim=-1)

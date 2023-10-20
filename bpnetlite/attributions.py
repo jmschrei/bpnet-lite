@@ -371,7 +371,8 @@ def dinucleotide_shuffle(sequence, n_shuffles=10, random_state=None):
 	chars, idxs = torch.unique(sequence.argmax(axis=0), return_inverse=True)
 	chars, idxs = chars.numpy(), idxs.numpy()
 
-	next_idxs = numpy.zeros((len(chars), sequence.shape[1]), dtype=numpy.int32)
+	n_chars, seq_len = sequence.shape
+	next_idxs = numpy.zeros((n_chars, seq_len), dtype=numpy.int32)
 	next_idxs_counts = numpy.zeros(max(chars)+1, dtype=numpy.int32)
 
 	for char in chars:

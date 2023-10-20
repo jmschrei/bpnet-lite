@@ -116,7 +116,7 @@ def one_hot_encode(sequence, alphabet=['A', 'C', 'G', 'T'], dtype='int8',
 		if idx != -1:
 			ohe[i, idx] = 1
 	
-	return ohe
+	return ohe.T
 
 
 class DataGenerator(torch.utils.data.Dataset):
@@ -408,7 +408,7 @@ def extract_loci(loci, sequences, signals=None, controls=None, chroms=None,
 			seq = sequences[chrom][start:end].T
 		else:
 			seq = one_hot_encode(sequences[chrom][start:end].seq.upper(),
-				alphabet=['A', 'C', 'G', 'T']).T
+				alphabet=['A', 'C', 'G', 'T'])
 
 		seqs.append(seq)
 		loci_count += 1

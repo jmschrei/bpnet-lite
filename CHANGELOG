@@ -3,6 +3,19 @@ Release History
 ===============
 
 
+Version 0.5.6
+==============
+
+Highlights
+----------
+
+	- Changed the shape of the returned one-hot encoded sequences to match
+	the documentation.
+	- Fixed an issue with dinucleotide shuffling when not all nucleotides
+	are present.
+
+
+
 Version 0.5.5
 ==============
 
