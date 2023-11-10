@@ -110,11 +110,11 @@ class DeepLiftShap():
 
 			output_diff = torch.sub(*torch.chunk(outputs[:,0], 2))
 			input_diff = torch.sum((inputs - baselines) * gradients, dim=(1, 2)) 
-			convergence_deltas = output_diff - input_diff
-			
+			convergence_deltas = abs(output_diff - input_diff)
+
 			if any(convergence_deltas > self.warning_threshold):
-				raise Warning("Convergence deltas too high: ", 
-					convergence_deltas)
+				warnings.warn("Convergence deltas too high: " +   
+					str(convergence_deltas))
 
 			if self.verbose:
 				print(convergence_deltas)
@@ -160,8 +160,11 @@ class DeepLiftShap():
 		return grad_input
 
 	def _can_register_hook(self, module):
-		return not (len(module._backward_hooks) > 0 or not isinstance(module, 
-			(torch.nn.ReLU, _ProfileLogitScaling)))
+		if len(module._backward_hooks) > 0:
+			return False
+		if not isinstance(module, (torch.nn.ReLU, _ProfileLogitScaling)):
+			return False
+		return True
 
 	def _register_hooks(self, module, attribute_to_layer_input=True):
 		if not self._can_register_hook(module) or (
@@ -201,8 +204,9 @@ class _ProfileLogitScaling(torch.nn.Module):
 		super(_ProfileLogitScaling, self).__init__()
 
 	def forward(self, logits):
-		y = torch.exp(logits - torch.logsumexp(logits, dim=-1, keepdims=True))
-		return logits * y.detach()
+		y = torch.nn.functional.log_softmax(logits, dim=-1)
+		y = logits * torch.exp(y).detach()
+		return y
 
 
 class ProfileWrapper(torch.nn.Module):
@@ -288,10 +292,10 @@ def hypothetical_attributions(multipliers, inputs, baselines):
 		The attribution values for each nucleotide in the input.
 	"""
 
-	projected_contribs = torch.zeros_like(baselines[0], dtype=baselines[0].dtype)
+	projected_contribs = torch.zeros_like(baselines[0], dtype=inputs[0].dtype)
 	
 	for i in range(inputs[0].shape[1]):
-		hypothetical_input = torch.zeros_like(inputs[0], dtype=baselines[0].dtype)
+		hypothetical_input = torch.zeros_like(inputs[0], dtype=inputs[0].dtype)
 		hypothetical_input[:, i] = 1.0
 		hypothetical_diffs = hypothetical_input - baselines[0]
 		hypothetical_contribs = hypothetical_diffs * multipliers[0]
@@ -433,12 +437,12 @@ def create_references(X, algorithm='dinucleotide', n_shuffles=20,
 	if algorithm == 'dinucleotide':
 		references = torch.stack([dinucleotide_shuffle(x.cpu(), 
 			n_shuffles=n_shuffles, random_state=random_state).to(
-			X.dtype) for x in X]).to(X.device)
+			X.dtype) for x in X]).to(X.device).type(X.dtype)
 	elif algorithm == 'zero':
-		references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
+		references = torch.zeros(X.shape[0], n_shuffles, *X.shape[1:], 
 			dtype=X.dtype, device=X.device)
 	elif algorithm == 'freq':
-		references = torch.zeros(e-s, n_shuffles, *X.shape[1:], 
+		references = torch.zeros(X.shape[0], n_shuffles, *X.shape[1:], 
 			dtype=X.dtype, device=X.device) + 0.25	
 	else:
 		raise ValueError("Algorithm must be one of " +
@@ -641,17 +645,17 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 
 	attributions = []
 	references_ = []
-	dev = next(model.parameters()).device
+	device = next(model.parameters()).device
 
 	for i in trange(0, len(X), batch_size, disable=not verbose):
-		s, e = i, min(i+batch_size, len(X))
-		_X = X[s:e].to(dev)
-		args_ = None if args is None else tuple([a[s:e].to(dev) for a in args])
+		s, e = i, i + batch_size
+		_X = X[s:e].to(device)
+		args_ = None if not args else tuple([a[s:e].to(device) for a in args])
 
 		if algorithm == 'deepliftshap':
 			# Calculate references
 			if isinstance(references, torch.Tensor):
-				_references = references[s:e]
+				_references = references[s:e].to(device)
 			else:
 				_references = create_references(_X, algorithm=references, 
 					n_shuffles=n_shuffles)
@@ -681,7 +685,8 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	return attributions
 
 
-def plot_attributions(X_attr, ax):
+def plot_attributions(X_attr, ax, color=None, annotations=None, start=None, 
+	end=None, ylim=None, spacing=4, n_tracks=4, show_extra=True):
 	"""Plot the attributions using logomaker.
 
 	Takes in a matrix of attributions and plots the attribution-weighted
@@ -697,9 +702,63 @@ def plot_attributions(X_attr, ax):
 		stored, i.e., 3 values per column are zero.
 	"""
 
-	df = pandas.DataFrame(X_attr.T, columns=['A', 'C', 'G', 'T'])
+	try:
+		import matplotlib.pyplot as plt
+	except:
+		raise ImportError("Must install matplotlib before using.")
+
+	if start is not None and end is not None:
+		X_attr_ = X_attr[:, start:end]
+
+	df = pandas.DataFrame(X_attr_.T, columns=['A', 'C', 'G', 'T'])
 	df.index.name = 'pos'
 	
 	logo = logomaker.Logo(df, ax=ax)
 	logo.style_spines(visible=False)
+
+	if color is not None:
+		alpha = numpy.array(['A', 'C', 'G', 'T'])
+		seq = ''.join(alpha[numpy.abs(df.values).argmax(axis=1)])
+		logo.style_glyphs_in_sequence(sequence=seq, color=color)
+
+	if annotations is not None:
+		annotations_ = annotations[annotations['start'] > start]
+		annotations_ = annotations_[annotations_['end'] < end]
+		annotations_ = annotations_.sort_values(["score"], ascending=False)
+
+		ylim = ylim or max(abs(X_attr_.min()), abs(X_attr_.max()))
+		plt.ylim(-ylim, ylim)
+
+		motifs = numpy.zeros((end-start, annotations_.shape[0]))
+		for _, row in annotations_.iterrows():
+			(motif, motif_start, motif_end, _, score, _, _) = row
+			motif_start -= start
+			motif_end -= start
+			
+			y_offset = 0.1
+			for i in range(annotations_.shape[0]):
+				if motifs[motif_start:motif_end, i].max() == 0:
+					if i < n_tracks:
+						text = "{}: ({:3.3})".format(motif, score)
+						motifs[motif_start:motif_end, i] = 1
+						y_offset += 0.2*i
+						
+						xp = [motif_start, motif_end]
+						yp = [-ylim*y_offset, -ylim*y_offset]
+
+						plt.plot(xp, yp, color='0.7', linewidth=2)        
+						plt.text(xp[0], -ylim*(y_offset+0.1), text, 
+							color='0.7', fontsize=9)
+						
+					elif show_extra:
+						s = motif_start
+
+						motifs[motif_start:motif_start+len(motif)*2, i] = 1
+						y_offset += -0.1 + 0.2*(n_tracks) + 0.1*(i-n_tracks)
+						
+						plt.text(motif_start, -ylim*(y_offset+0.1), motif, 
+							color='0.7', fontsize=9)    
+						
+					break
+
 	return logo

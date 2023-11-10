@@ -4,6 +4,7 @@
 import math
 import numpy
 import torch
+import pandas
 
 from .io import read_meme
 
@@ -204,25 +205,30 @@ class HitCaller(torch.nn.Module):
 			example or one per motif.
 		"""
 
-		n = self.n_motifs if dim == 1 else len(X)
+		n = self.n_motifs if dim == 0 else len(X)
 		hits = [[] for i in range(n)]
 		letters = numpy.array(['A', 'C', 'G', 'T'])
 		
 		log_threshold = numpy.log(threshold)
-		n_bins = numpy.array([len(scores) for scores in self._score_to_pval]) - 1
 		
 		scores = self.predict(X)        
 		score_thresh = torch.empty(1, scores.shape[1], 1, 1)
 		for i in range(scores.shape[1]):
-			idx = numpy.where(model._score_to_pval[i] < log_threshold)[0][0]
+			idx = numpy.where(self._score_to_pval[i] < log_threshold)[0][0]
 			score_thresh[0, i] = (idx + self._smallest[i]) * self.bin_size                               
 		
 		hit_idxs = torch.where(scores > score_thresh)        
 		for example_idx, motif_idx, strand_idx, pos_idx in zip(*hit_idxs):
 			score = scores[example_idx, motif_idx, strand_idx, pos_idx].item()
 			
+			l = self.motif_lengths[motif_idx]
 			start = pos_idx.item()
-			end = pos_idx.item() + self.motif_lengths[motif_idx]
+			if strand_idx == 1:
+				end = start + max(self.motif_lengths)
+				start = start + max(self.motif_lengths) - l
+			else:
+				end = start + l
+
 			idxs = X[example_idx, :, start:end].argmax(axis=0).numpy(force=True)
 			seq = ''.join(letters[idxs])
 			strand = '+-'[strand_idx]

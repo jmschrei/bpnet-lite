@@ -54,6 +54,7 @@ negatives_parser.add_argument("-o", "--output", required=True,
 	help="Output bed file.")
 negatives_parser.add_argument("-l", "--bin_width", type=float, default=0.02, 
 	help="GC bin width to match.")
+
 negatives_parser.add_argument("-w", "--width", type=int, default=2114, 
 	help="Width for calculating GC content.")
 negatives_parser.add_argument("-v", "--verbose", default=True, 
@@ -316,7 +317,7 @@ args = parser.parse_args()
 # Calculate GC-matched negatives
 if args.cmd == 'negatives':
 	if args.fasta is not None:
-		chroms = ['chr{}'.format(i) for i in range(1, 23)] + ['chrX']
+		chroms = list(pyfaidx.Fasta(args.fasta).keys())
 		calculate_gc_genomewide(args.fasta, args.bigwig, args.width, chroms, 
 			args.verbose)
 
