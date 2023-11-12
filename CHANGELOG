@@ -3,6 +3,18 @@ Release History
 ===============
 
 
+Version 0.5.7
+==============
+
+Highlights
+----------
+
+	- Changed the `warning_threshold` argument to only print a warning rather
+	than end the process when the model exceeds it.
+	- Added support for plotting annotations alongside `plot_attributions` 
+	- Fixed various minor bugs.
+
+
 Version 0.5.6
 ==============
 

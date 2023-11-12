@@ -687,10 +687,12 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 
 def plot_attributions(X_attr, ax, color=None, annotations=None, start=None, 
 	end=None, ylim=None, spacing=4, n_tracks=4, show_extra=True):
-	"""Plot the attributions using logomaker.
+	"""Plot attributions and optionally annotations.
 
-	Takes in a matrix of attributions and plots the attribution-weighted
-	sequence using logomaker. This is a convenience function.
+	This function will take in a matrix of attributions and use logomaker to
+	plot them. If annotations of motifs are provided, those will be plotted
+	underneath the tracks, with several customizable options. This is largely
+	a thin-wrapper around logomaker.
 
 
 	Parameters
@@ -700,6 +702,55 @@ def plot_attributions(X_attr, ax, color=None, annotations=None, start=None,
 		attributions, where the entire matrix has values, or the projected
 		attributions, where only the actual bases have their attributions
 		stored, i.e., 3 values per column are zero.
+
+	ax: matplotlib.pyplot.subplot
+		The art board to draw on.
+
+	color: str or None, optional
+		The color to plot all characters as. If None, plot according to
+		standard coloring. Default is None.
+
+	annotations: pandas.DataFrame, optional
+		A set of annotations with the following columns in order:
+			- motif: the name of the motif
+			- start: the start of the hit relative to the window provided
+			- end: the end of the hit relative to the window provided
+			- strand: the strand the hit is on (optional)
+			- score: the score of the hit
+			- two more optional columns
+
+		These will probably come from the output of the hit caller. Default is
+		None.
+
+	start: int or None, optional
+		The start of the sequence to visualize. Must be non-negative and cannot
+		be longer than the length of `X_attr`. If None, visualize the full
+		sequence. Default is None.
+
+	end: int or None, optional
+		The end of the sequence to visuaize. Must be non-negative and cannot be
+		longer than the length of `X_attr`. If `start` is provided, `end` must 
+		be larger. If None, visualize the full sequence. Default is None.
+
+	ylim: tuple or None, optional
+		The lower and upper bounds of the plot. Pass the bounds in here rather
+		than setting them after calling this function if you want the annotation
+		spacing to adjust to it. If None, use the default bounds. Default is
+		None.
+
+	spacing: int or None, optional
+		The number of positions between motifs to include when determining
+		overlap. If there is enough overlap, kick the motif down to the next
+		row of annotations. Default is 4.
+
+	n_tracks: int, optional
+		The number of tracks of annotations to plot with bars before simply
+		putting the name of the motif. Default is 4.
+
+	show_extra: bool, optional
+		Whether to show motifs past the `n_tracks` number of rows that include
+		the motif and the bar indicating positioning. If False, do not show
+		those motifs. Default is True.
 	"""
 
 	try:
@@ -708,9 +759,9 @@ def plot_attributions(X_attr, ax, color=None, annotations=None, start=None,
 		raise ImportError("Must install matplotlib before using.")
 
 	if start is not None and end is not None:
-		X_attr_ = X_attr[:, start:end]
+		X_attr = X_attr[:, start:end]
 
-	df = pandas.DataFrame(X_attr_.T, columns=['A', 'C', 'G', 'T'])
+	df = pandas.DataFrame(X_attr.T, columns=['A', 'C', 'G', 'T'])
 	df.index.name = 'pos'
 	
 	logo = logomaker.Logo(df, ax=ax)
@@ -726,7 +777,7 @@ def plot_attributions(X_attr, ax, color=None, annotations=None, start=None,
 		annotations_ = annotations_[annotations_['end'] < end]
 		annotations_ = annotations_.sort_values(["score"], ascending=False)
 
-		ylim = ylim or max(abs(X_attr_.min()), abs(X_attr_.max()))
+		ylim = ylim or max(abs(X_attr.min()), abs(X_attr.max()))
 		plt.ylim(-ylim, ylim)
 
 		motifs = numpy.zeros((end-start, annotations_.shape[0]))
