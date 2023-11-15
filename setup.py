@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='bpnet-lite',
-    version='0.5.7',
+    version='0.6.0',
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
     packages=['bpnetlite'],
@@ -23,6 +23,7 @@ setup(
         "logomaker",
         "captum == 0.5.0",
         "seaborn >= 0.11.2",
-        "modisco-lite >= 2.0.0"
+        "modisco-lite >= 2.0.0",
+        "joblib >= 1.3.2"
     ],
 )

@@ -3,6 +3,20 @@ Release History
 ===============
 
 
+Version 0.6.0
+==============
+
+Highlights
+----------
+
+	- Replaced the negative sampling code with a simpler approach that only
+	considers bins of signal rather than operates at bp resolution. This code
+	is much faster and more robust but may produce slightly worse GC matches.
+	- The negative sampling code now allows you to pass in a bigwig so that
+	only regions that pass a threshold are selected.
+
+
+
 Version 0.5.7
 ==============
 
