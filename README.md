@@ -9,6 +9,27 @@ bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/art
 
 You can install bpnet-lite with `pip install bpnet-lite`.
 
+### Data Processing
+
+BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integer counts with one count per read in the file. Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you should then use the following command line arguments to get bigwigs of integer counts.
+
+If you are using stranded data, e.g., ChIP-seq:
+
+```
+bedtools genomecov -5 -bg -strand + -g <your genome>.chrom.sizes -ibam <your bam>.bam | sort -k1,1 -k2,2n > pos_strand.bedGraph
+./bedGraphToBigWig pos_strand.bedGraph <your genome>.chrom.sizes pos_strand.bw
+
+bedtools genomecov -5 -bg -strand - -g <your genome>.chrom.sizes -ibam <your bam>.bam | sort -k1,1 -k2,2n > neg_strand.bedGraph
+./bedGraphToBigWig neg_strand.bedGraph <your genome>.chrom.sizes neg_strand.bw
+```
+
+If you are using unstranded data, e.g., DNase- or ATAC-seq.
+
+```
+bedtools genomecov -5 -bg -g <your genome>.chrom.sizes -ibam <your bam>.bam | sort -k1,1 -k2,2n > data.bedGraph
+./bedGraphToBigWig data.bedGraph <your genome>.chrom.sizes data.bw
+```
+
 ## BPNet
 
 ![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/5c6e6f73-aedd-4256-8776-5ef57a728d5e)
