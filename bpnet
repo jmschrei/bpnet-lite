@@ -15,7 +15,7 @@ from bpnetlite import BPNet
 from bpnetlite.io import PeakGenerator
 from bpnetlite.io import extract_loci
 
-from bpnetlite.attributions import calculate_attributions
+from bpnetlite.attributions import attribute
 from bpnetlite.marginalize import marginalization_report
 
 from bpnetlite.negatives import extract_matching_loci
@@ -34,7 +34,7 @@ desc = """BPNet is an neural network primarily composed of dilated residual
 	files for the signal to predict and the control signal, and train a
 	BPNet model for you."""
 
-_help = """Must be either 'negatives', 'fit', 'predict', 'interpret',
+_help = """Must be either 'negatives', 'fit', 'predict', 'attribute',
 	'marginalize', or 'pipeline'."""
 
 
@@ -72,9 +72,9 @@ predict_parser = subparsers.add_parser("predict",
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
-interpret_parser = subparsers.add_parser("interpret", 
-	help="Make interpretations using a trained BPNet model.")
-interpret_parser.add_argument("-p", "--parameters", type=str, required=True,
+attribute_parser = subparsers.add_parser("attribute", 
+	help="Calculate attributions using a trained BPNet model.")
+attribute_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
 marginalize_parser = subparsers.add_parser("marginalize", 
@@ -139,7 +139,7 @@ default_predict_parameters = {
 	'counts_filename': 'y_counts.npz'
 }
 
-default_interpret_parameters = {
+default_attribute_parameters = {
 	'batch_size': 1,
 	'in_window': 2114,
 	'out_window': 1000,
@@ -234,8 +234,8 @@ default_pipeline_parameters = {
 	},
 
 
-	# Interpret parameters
-	'interpret_parameters': {
+	# Attribution parameters
+	'attribute_parameters': {
 		'batch_size': 1,
 		'chroms': ['chr8', 'chr10'],
 		'output': 'profile',
@@ -437,8 +437,8 @@ elif args.cmd == 'predict':
 	numpy.savez_compressed(parameters['counts_filename'], y_counts)
 
 
-elif args.cmd == 'interpret':
-	parameters = merge_parameters(args.parameters, default_interpret_parameters)
+elif args.cmd == 'attribute':
+	parameters = merge_parameters(args.parameters, default_attribute_parameters)
 
 	###
 
@@ -457,7 +457,7 @@ elif args.cmd == 'interpret':
 	else:
 		X_ctl = None
 
-	X_attr = calculate_attributions(model, X, args=X_ctl,
+	X_attr = attribute(model, X, args=X_ctl,
 		model_output=parameters['output'], hypothetical=True, 
 		n_shuffles=parameters['n_shuffles'],
 		batch_size=parameters['batch_size'],
@@ -548,30 +548,30 @@ elif args.cmd == 'pipeline':
 	os.system("bpnet predict -p {}".format(name))
 	
 
-	# Step 3: Interpret the validation set
+	# Step 3: Calculate attributions
 	if parameters['verbose']:
 		print("\nStep 3: Calculating attributions")
 
-	interpret_parameters = {key: parameters.get(key, None) for key in 
-		default_interpret_parameters if key in parameters}
-	for parameter, value in parameters['interpret_parameters'].items():
+	attribute_parameters = {key: parameters.get(key, None) for key in 
+		default_attribute_parameters if key in parameters}
+	for parameter, value in parameters['attribute_parameters'].items():
 		if value is not None:
-			interpret_parameters[parameter] = value
+			attribute_parameters[parameter] = value
 
-	if 'ohe_filename' not in interpret_parameters:
-		interpret_parameters['ohe_filename'] = '{}.ohe.npz'.format(
+	if 'ohe_filename' not in attribute_parameters:
+		attribute_parameters['ohe_filename'] = '{}.ohe.npz'.format(
 			parameters['name'])
 
-	if 'attr_filename' not in interpret_parameters:
-		interpret_parameters['attr_filename'] = '{}.attr.npz'.format(
+	if 'attr_filename' not in attribute_parameters:
+		attribute_parameters['attr_filename'] = '{}.attr.npz'.format(
 			parameters['name'])
 
-	name = '{}.bpnet.interpret.json'.format(parameters['name'])
+	name = '{}.bpnet.attribute.json'.format(parameters['name'])
 	with open(name, 'w') as outfile:
-		outfile.write(json.dumps(interpret_parameters, sort_keys=True, 
+		outfile.write(json.dumps(attribute_parameters, sort_keys=True, 
 			indent=4))
 
-	os.system("bpnet interpret -p {}".format(name))
+	os.system("bpnet attribute -p {}".format(name))
 
 
 	# Step 4: Calculate tf-modisco motifs
@@ -585,8 +585,8 @@ elif args.cmd == 'pipeline':
 			parameters['name'])
 
 	cmd = "modisco motifs -s {} -a {} -n {} -o {}".format(
-		interpret_parameters['ohe_filename'], 
-		interpret_parameters['attr_filename'],
+		attribute_parameters['ohe_filename'], 
+		attribute_parameters['attr_filename'],
 		modisco_parameters['n_seqlets'],
 		modisco_parameters['output_filename'])
 	if modisco_parameters['verbose']:

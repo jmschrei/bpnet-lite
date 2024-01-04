@@ -3,6 +3,19 @@ Release History
 ===============
 
 
+Version 0.7.0
+==============
+
+Highlights
+----------
+
+	- Changed the function name from `calculate_attributions` to `attribute`
+	to be more in line with the `predict` and `marginalize` functions. The
+	functionality and usage should be the same.
+	- Changed the nomenclature from "interpret" to "attribute" to be more
+	consistent with the name of the function and what is used colloquially.
+
+
 Version 0.6.0
 ==============
 

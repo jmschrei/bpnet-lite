@@ -12,19 +12,19 @@ import logomaker
 
 from .io import one_hot_encode
 from .io import read_meme
-from .attributions import calculate_attributions
+from .attributions import attribute
 
 import matplotlib.pyplot as plt
 
 
 def marginalize(model, motif, X):
-	"""Runs a single marginalization experiment.
+	"""Runs a single marginalization experiment and returns predictions.
 
 	Given a predictive model, a motif to insert, and a set of background
 	sequences, evaluate the difference in predictions from the model when
 	using the background sequences and after inserting the motif into the
 	middle of the sequences. This will look at the difference in the profile
-	head, the count head, as well as the attributions from the profile head.
+	head and the count head.
 
 
 	Parameters
@@ -55,14 +55,6 @@ def marginalize(model, motif, X):
 	y_after_counts: torch.Tensor, shape=(n, 1)
 		The count head predictions after inserting the motif into the
 		background sequences.
-
-	attr_before: torch.Tensor, shape=(n, 4, 2114)
-		The DeepLIFT/SHAP attributions for each nucleotide in the background
-		sequences.
-
-	attr_after: torch.Tensor, shape=(n, 4, 2114)
-		The DeepLIFT/SHAP attributions for each nucleotide after inserting
-		the motif into the background sequences.
 	"""
 
 	if isinstance(X, numpy.ndarray):
@@ -79,9 +71,6 @@ def marginalize(model, motif, X):
 	y_before_profile, y_before_counts = model.predict(X, X_ctl)
 	y_before_profile = torch.nn.functional.softmax(y_before_profile, dim=-1)
 
-	attr_before = calculate_attributions(model, X, args=args, n_shuffles=10,
-		batch_size=1)
-
 	X_perturb = torch.clone(X)
 	motif_ohe = one_hot_encode(motif, alphabet=['A', 'C', 'G', 'T'])
 	motif_ohe = torch.from_numpy(motif_ohe)
@@ -94,11 +83,70 @@ def marginalize(model, motif, X):
 	y_after_profile, y_after_counts = model.predict(X_perturb, X_ctl)
 	y_after_profile = torch.nn.functional.softmax(y_after_profile, dim=-1)
 
-	attr_after = calculate_attributions(model, X_perturb, args=args, 
-		n_shuffles=10, batch_size=1)
+	return y_before_profile, y_after_profile, y_before_counts, y_after_counts
 
-	return (y_before_profile, y_after_profile, y_before_counts, y_after_counts, 
-		attr_before, attr_after)
+def marginalize_attributions(model, motif, X, **kwargs):
+	"""Runs a single marginalization experiment and returns predictions.
+
+	Given a predictive model, a motif to insert, and a set of background
+	sequences, evaluate the difference in predictions from the model when
+	using the background sequences and after inserting the motif into the
+	middle of the sequences. This will look at the difference in the
+	attributions.
+
+
+	Parameters
+	----------
+	model: bpnetlite.bpnet.BPNet or bpnetlite.chrombpnet.ChromBPNet
+		A BPNet- or ChromBPNet-style model that outputs predictions for a
+		profile head and a count head.
+
+	motif: str
+		A motif to insert into the middle of the background sequences.
+
+	X: numpy.ndarray or torch.Tensor, shape=(n, 4, 2114)
+		A one-hot encoded set of n sequences to run through the model.
+
+	kwargs: arguments
+		Other arguments to pass into the `attribute` function, most
+		likely including `n_shuffles` or `random_state`.
+
+
+	Returns
+	-------
+	attr_before: torch.Tensor, shape=(n, 4, 2114)
+		The DeepLIFT/SHAP attributions for each nucleotide in the background
+		sequences. Only returned if `attributions` is True.
+
+	attr_after: torch.Tensor, shape=(n, 4, 2114)
+		The DeepLIFT/SHAP attributions for each nucleotide after inserting
+		the motif into the background sequences. Only returned if `attributions` 
+		is True.
+	"""
+
+	if isinstance(X, numpy.ndarray):
+		X = torch.from_numpy(X)
+
+	if hasattr(model, "n_control_tracks") and model.n_control_tracks > 0:
+		X_ctl = torch.zeros(X.shape[0], model.n_control_tracks, X.shape[-1],
+			dtype=torch.float32)
+		args = (X_ctl,)
+	else:
+		X_ctl = None
+		args = None
+		
+	X_perturb = torch.clone(X)
+	motif_ohe = one_hot_encode(motif, alphabet=['A', 'C', 'G', 'T'])
+	motif_ohe = torch.from_numpy(motif_ohe)
+
+	start = X.shape[-1] // 2 - len(motif) // 2
+	for i in range(len(motif)):
+		if motif_ohe[:, i].sum() > 0:
+			X_perturb[:, :, start+i] = motif_ohe[:, i]
+
+	attr_before = attribute(model, X, args=args, **kwargs)
+	attr_after = attribute(model, X_perturb, args=args, **kwargs)
+	return attr_before, attr_after
 
 
 def path_to_image_html(path):
@@ -208,8 +256,11 @@ def marginalization_report(model, motifs, sequences, output_dir, minimal=False):
 		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=1)])
 		print(i, len(motifs), name, motif)
 
-		(y_profile_before, y_profile_after, y_counts_before, y_counts_after, 
-			y_attr_before, y_attr_after) = marginalize(model, motif, sequences)
+		(y_profile_before, y_profile_after, y_counts_before, 
+			y_counts_after) = marginalize(model, motif, sequences)
+
+		y_attr_before, y_attr_after = marginalize_attributions(model, motif, 
+			sequences)
 
 		mid = y_attr_before.shape[-1] // 2
 		w = 15

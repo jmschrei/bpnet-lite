@@ -430,14 +430,14 @@ def create_references(X, algorithm='dinucleotide', n_shuffles=20,
 
 	Returns
 	-------
-	_references: torch.tensor, shape=(-1, 4, -1)
+	_references: torch.tensor, shape=(-1, n_shuffles, 4, -1)
 		A one-hot encoded sequence of shuffles.
 	"""
 
 	if algorithm == 'dinucleotide':
 		references = torch.stack([dinucleotide_shuffle(x.cpu(), 
-			n_shuffles=n_shuffles, random_state=random_state).to(
-			X.dtype) for x in X]).to(X.device).type(X.dtype)
+			n_shuffles=n_shuffles, random_state=random_state) for x in X]).to(
+			X.device).type(X.dtype)
 	elif algorithm == 'zero':
 		references = torch.zeros(X.shape[0], n_shuffles, *X.shape[1:], 
 			dtype=X.dtype, device=X.device)
@@ -543,7 +543,7 @@ def ism(model, X_0, args=None, batch_size=128, verbose=False):
 	return X_ism
 	
 
-def calculate_attributions(model, X, args=None, model_output="profile", 
+def attribute(model, X, args=None, model_output="profile", 
 	attribution_func=hypothetical_attributions, hypothetical=False,
 	algorithm="deepliftshap", references='dinucleotide', n_shuffles=20, 
 	batch_size=32, return_references=False, warning_threshold=0.001, 
@@ -650,7 +650,8 @@ def calculate_attributions(model, X, args=None, model_output="profile",
 	for i in trange(0, len(X), batch_size, disable=not verbose):
 		s, e = i, i + batch_size
 		_X = X[s:e].to(device)
-		args_ = None if not args else tuple([a[s:e].to(device) for a in args])
+		args_ = None if args is None else tuple([a[s:e].to(device) 
+			for a in args])
 
 		if algorithm == 'deepliftshap':
 			# Calculate references

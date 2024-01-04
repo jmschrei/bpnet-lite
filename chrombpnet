@@ -13,7 +13,7 @@ from bpnetlite.chrombpnet import ChromBPNet
 
 from bpnetlite.io import PeakGenerator
 from bpnetlite.io import extract_loci
-from bpnetlite.attributions import calculate_attributions
+from bpnetlite.attributions import attribute
 from bpnetlite.marginalize import marginalization_report
 
 import json
@@ -29,7 +29,7 @@ desc = """ChromBPNet is a neural network that builds off the original BPNet
 	After training, the accessibility model can be used using the `bpnet`
 	tool."""
 
-_help = """Must be either 'fit', 'predict', 'interpret', 'marginalize', 
+_help = """Must be either 'fit', 'predict', 'attribute', 'marginalize', 
 	or 'pipeline'."""
 
 
@@ -46,9 +46,9 @@ predict_parser = subparsers.add_parser("predict",
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
-interpret_parser = subparsers.add_parser("interpret", 
-	help="Make interpretations using a trained BPNet model.")
-interpret_parser.add_argument("-p", "--parameters", type=str, required=True,
+attribute_parser = subparsers.add_parser("attribute", 
+	help="Calculate attributions using a trained BPNet model.")
+attribute_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
 marginalize_parser = subparsers.add_parser("marginalize", 
@@ -126,7 +126,7 @@ default_predict_parameters = {
 	'counts_filename': 'y_counts.npz'
 }
 
-default_interpret_parameters = {
+default_attribute_parameters = {
 	'batch_size': 1,
 	'in_window': 2114,
 	'out_window': 1000,
@@ -233,8 +233,8 @@ default_pipeline_parameters = {
 	},
 
 
-	# Interpret parameters
-	'interpret_parameters': {
+	# attribute parameters
+	'attribute_parameters': {
 		'batch_size': 1,
 		'chroms': ['chr8', 'chr10'],
 		'output': 'profile',
@@ -420,9 +420,9 @@ elif args.cmd == 'predict':
 	os.system("bpnet predict -p {}".format(args.parameters))
 
 
-# Make interpretations from the full ChromBPNet model
-elif args.cmd == 'interpret':
-	os.system("bpnet interpret -p {}".format(args.parameters))
+# Calculate attributions from the full ChromBPNet model
+elif args.cmd == 'attribute':
+	os.system("bpnet attribute -p {}".format(args.parameters))
 
 
 # Marginalize motifs
