@@ -14,6 +14,8 @@ from .logging import Logger
 
 from tqdm import trange
 
+from tangermeme.predict import predict
+
 
 class ChromBPNet(torch.nn.Module):
 	"""A ChromBPNet model.
@@ -95,43 +97,6 @@ class ChromBPNet(torch.nn.Module):
 		
 		return y_profile, y_counts
 
-	@torch.no_grad()
-	def predict(self, X, X_ctl=None, batch_size=16, verbose=False):
-		"""A method for making batched predictions.
-
-		This method will take in a large number of cell states and provide
-		predictions in a batched manner without storing the gradients. Useful
-		for inference step.
-
-
-		Parameters
-		----------
-		X: torch.tensor, shape=(-1, 4, 2114)
-			A one-hot encoded sequence tensor.
-
-		X_ctl: dummy
-			A dummy variable to make compatible with command-line tools. Ignore.
-
-		batch_size: int, optional
-			The number of elements to use in each batch. Default is 64.
-
-		verbose: bool
-			Whether to print a progress bar during predictions.
-
-
-		Returns
-		-------
-		y_hat: torch.tensor, shape=(-1, 1000)
-			A tensor containing the predicted profiles.
-		"""		
-
-		y_profile, y_counts = [], []
-		for start in trange(0, len(X), batch_size, disable=not verbose):
-			y_profile_, y_counts_ = self(X[start:start+batch_size].cuda())
-			y_profile.append(y_profile_.cpu())
-			y_counts.append(y_counts_.cpu())
-
-		return torch.cat(y_profile), torch.cat(y_counts)
 
 	def fit(self, training_data, optimizer, X_valid=None, y_valid=None,
 		max_epochs=100, batch_size=64, validation_iter=100, early_stopping=None, 
@@ -190,8 +155,8 @@ class ChromBPNet(torch.nn.Module):
 		"""
 
 		X_valid = X_valid.cuda(non_blocking=True)
-		y_bias_profile, y_bias_counts = self.bias.predict(X_valid)
-
+		y_bias_profile, y_bias_counts =predict(self.bias, X_valid, 
+			batch_size=batch_size, device='cuda')
 
 		self.logger = Logger(["Epoch", "Iteration", "Training Time",
 			"Validation Time", "Training MNLL", "Training Count MSE", 
@@ -240,7 +205,9 @@ class ChromBPNet(torch.nn.Module):
 					with torch.no_grad():
 						self.accessibility.eval()
 
-						y_profile, y_counts = self.accessibility.predict(X_valid)
+						y_profile, y_counts = predict(self.accessibility, 
+							X_valid, batch_size=batch_size, device='cuda')
+
 						y_profile = torch.nn.functional.log_softmax(
 							y_profile + y_bias_profile, dim=-1)
 

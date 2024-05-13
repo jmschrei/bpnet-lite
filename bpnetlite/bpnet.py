@@ -20,7 +20,116 @@ from .logging import Logger
 
 from tqdm import tqdm
 
+from tangermeme.predict import predict
+
 torch.backends.cudnn.benchmark = True
+
+
+class ControlWrapper(torch.nn.Module):
+	"""This wrapper automatically creates a control track of all zeroes.
+
+	This wrapper will check to see whether the model is expecting a control
+	track (e.g., most BPNet-style models) and will create one with the expected
+	shape. If no control track is expected then it will provide the normal
+	output from the model.
+	"""
+
+	def __init__(self, model):
+		super(ControlWrapper, self).__init__()
+		self.model = model
+
+	def forward(self, X, X_ctl=None):
+		if X_ctl != None:
+			return self.model(X, X_ctl)
+
+		if self.model.n_control_tracks == 0:
+			return self.model(X)
+
+		X_ctl = torch.zeros(X.shape[0], self.model.n_control_tracks,
+			X.shape[-1], dtype=X.dtype, device=X.device)
+		return self.model(X, X_ctl)
+
+	
+
+class _ProfileLogitScaling(torch.nn.Module):
+	"""This ugly class is necessary because of Captum.
+
+	Captum internally registers classes as linear or non-linear. Because the
+	profile wrapper performs some non-linear operations, those operations must
+	be registered as such. However, the inputs to the wrapper are not the
+	logits that are being modified in a non-linear manner but rather the
+	original sequence that is subsequently run through the model. Hence, this
+	object will contain all of the operations performed on the logits and
+	can be registered.
+
+
+	Parameters
+	----------
+	logits: torch.Tensor, shape=(-1, -1)
+		The logits as they come out of a Chrom/BPNet model.
+	"""
+
+	def __init__(self):
+		super(_ProfileLogitScaling, self).__init__()
+		self.softmax = torch.nn.Softmax(dim=-1)
+
+	def forward(self, logits):
+		y_softmax = self.softmax(logits)
+		y = logits * y_softmax
+		return y
+		#print("a") 
+		#y_lsm = torch.nn.functional.log_softmax(logits, dim=-1)
+		#return torch.sign(logits) * torch.exp(torch.log(abs(logits)) + y_lsm)
+
+
+class ProfileWrapper(torch.nn.Module):
+	"""A wrapper class that returns transformed profiles.
+
+	This class takes in a trained model and returns the weighted softmaxed
+	outputs of the first dimension. Specifically, it takes the predicted
+	"logits" and takes the dot product between them and the softmaxed versions
+	of those logits. This is for convenience when using captum to calculate
+	attribution scores.
+
+	Parameters
+	----------
+	model: torch.nn.Module
+		A torch model to be wrapped.
+	"""
+
+	def __init__(self, model):
+		super(ProfileWrapper, self).__init__()
+		self.model = model
+		self.flatten = torch.nn.Flatten()
+		self.scaling = _ProfileLogitScaling()
+
+	def forward(self, X, X_ctl=None, **kwargs):
+		logits = self.model(X, X_ctl, **kwargs)[0]
+		logits = self.flatten(logits)
+		logits = logits - torch.mean(logits, dim=-1, keepdims=True)
+		return self.scaling(logits).sum(dim=-1, keepdims=True)
+
+
+class CountWrapper(torch.nn.Module):
+	"""A wrapper class that only returns the predicted counts.
+
+	This class takes in a trained model and returns only the second output.
+	For BPNet models, this means that it is only returning the count
+	predictions. This is for convenience when using captum to calculate
+	attribution scores.
+
+	Parameters
+	----------
+	model: torch.nn.Module
+		A torch model to be wrapped.
+	"""
+
+	def __init__(self, model):
+		super(CountWrapper, self).__init__()
+		self.model = model
+
+	def forward(self, X, X_ctl=None, **kwargs):
+		return self.model(X, X_ctl, **kwargs)[1]
 
 
 class BPNet(torch.nn.Module):
@@ -206,59 +315,6 @@ class BPNet(torch.nn.Module):
 		return y_profile, y_counts
 
 
-	def predict(self, X, X_ctl=None, batch_size=64, verbose=False):
-		"""Make predictions for a large number of examples.
-
-		This method will make predictions for a number of examples that exceed
-		the batch size. It is similar to the forward method in terms of inputs 
-		and outputs, but will run wrapped with `torch.no_grad()` to speed up
-		computation and prevent information leakage into the model.
-
-
-		Parameters
-		----------
-		X: torch.tensor, shape=(-1, 4, length)
-			The one-hot encoded batch of sequences.
-
-		X_ctl: torch.tensor or None, shape=(-1, n_strands, length)
-			A value representing the signal of the control at each position in 
-			the sequence. If no controls, pass in None. Default is None.
-
-		batch_size: int, optional
-			The number of examples to run at a time. Default is 64.
-
-		verbose: bool
-			Whether to print a progress bar during predictions.
-
-
-		Returns
-		-------
-		y_profile: torch.tensor, shape=(-1, n_strands, out_length)
-			The output predictions for each strand trimmed to the output
-			length.
-		"""
-
-
-		with torch.no_grad():
-			starts = numpy.arange(0, X.shape[0], batch_size)
-			ends = starts + batch_size
-
-			y_profiles, y_counts = [], []
-			for start, end in tqdm(zip(starts, ends), disable=not verbose):
-				X_batch = X[start:end].cuda()
-				X_ctl_batch = None if X_ctl is None else X_ctl[start:end].cuda()
-
-				y_profiles_, y_counts_ = self(X_batch, X_ctl_batch)
-				y_profiles_ = y_profiles_.cpu()
-				y_counts_ = y_counts_.cpu()
-				
-				y_profiles.append(y_profiles_)
-				y_counts.append(y_counts_)
-
-			y_profiles = torch.cat(y_profiles)
-			y_counts = torch.cat(y_counts)
-			return y_profiles, y_counts
-
 	def fit(self, training_data, optimizer, X_valid=None, X_ctl_valid=None, 
 		y_valid=None, max_epochs=100, batch_size=64, validation_iter=100, 
 		early_stopping=None, verbose=True):
@@ -357,10 +413,11 @@ class BPNet(torch.nn.Module):
 				y_profile = torch.nn.functional.log_softmax(y_profile, dim=-1)
 				
 				y = y.reshape(y.shape[0], -1)
+				y_ = y.sum(dim=-1).reshape(-1, 1)
 
 				# Calculate the profile and count losses
 				profile_loss = MNLLLoss(y_profile, y).mean()
-				count_loss = log1pMSELoss(y_counts, y.sum(dim=-1).reshape(-1, 1)).mean()
+				count_loss = log1pMSELoss(y_counts, y_).mean()
 
 				# Extract the profile loss for logging
 				profile_loss_ = profile_loss.item()
@@ -379,11 +436,14 @@ class BPNet(torch.nn.Module):
 						self.eval()
 
 						tic = time.time()
-						y_profile, y_counts = self.predict(X_valid, X_ctl_valid)
+						y_profile, y_counts = predict(self, X_valid, 
+							args=(X_ctl_valid,), batch_size=batch_size, 
+							device='cuda')
 
 						z = y_profile.shape
 						y_profile = y_profile.reshape(y_profile.shape[0], -1)
-						y_profile = torch.nn.functional.log_softmax(y_profile, dim=-1)
+						y_profile = torch.nn.functional.log_softmax(y_profile, 
+							dim=-1)
 						y_profile = y_profile.reshape(*z)
 
 						measures = calculate_performance_measures(y_profile, 

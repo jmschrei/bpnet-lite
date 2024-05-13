@@ -12,9 +12,9 @@ from bpnetlite.bpnet import BPNet
 from bpnetlite.chrombpnet import ChromBPNet
 
 from bpnetlite.io import PeakGenerator
-from bpnetlite.io import extract_loci
-from bpnetlite.attributions import attribute
 from bpnetlite.marginalize import marginalization_report
+
+from tangermeme.io import extract_loci
 
 import json
 
@@ -37,17 +37,17 @@ _help = """Must be either 'fit', 'predict', 'attribute', 'marginalize',
 parser = argparse.ArgumentParser(description=desc)
 subparsers = parser.add_subparsers(help=_help, required=True, dest='cmd')
 
-train_parser = subparsers.add_parser("fit", help="Fit a BPNet model.")
+train_parser = subparsers.add_parser("fit", help="Fit a ChromBPNet model.")
 train_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for fitting the model.")
 
 predict_parser = subparsers.add_parser("predict", 
-	help="Make predictions using a trained BPNet model.")
+	help="Make predictions using a trained ChromBPNet model.")
 predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
 attribute_parser = subparsers.add_parser("attribute", 
-	help="Calculate attributions using a trained BPNet model.")
+	help="Calculate attributions using a trained ChromBPNet model.")
 attribute_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for calculating attributions.")
 
@@ -137,11 +137,12 @@ default_attribute_parameters = {
 	'sequences': None,
 	'loci': None,
 	'model': None,
-	'output': 'profile',
+	'output': 'counts',
 	'ohe_filename': 'ohe.npz',
 	'attr_filename': 'attr.npz',
 	'n_shuffles':20,
-	'random_state':0
+	'random_state':0,
+	'warning_threshold':1e-3,
 }
 
 default_marginalize_parameters = {
@@ -237,11 +238,12 @@ default_pipeline_parameters = {
 	'attribute_parameters': {
 		'batch_size': 1,
 		'chroms': ['chr8', 'chr10'],
-		'output': 'profile',
+		'output': 'counts',
 		'loci': None,
 		'ohe_filename': None,
 		'attr_filename': None,
 		'n_shuffles': None,
+		'warning_threshold':1e-3,
 		'verbose': None,
 		'random_state': None
 	},
@@ -316,13 +318,14 @@ def merge_parameters(parameters, default_parameters):
 # Pull the arguments
 args = parser.parse_args()
 
-# Fit ChromBPNet model
+##########
+# FIT
+##########
+
 if args.cmd == "fit":
 	parameters = merge_parameters(args.parameters, default_fit_parameters)
 
 	###
-
-	print(parameters['loci'])
 
 	training_data = PeakGenerator(
 		loci=parameters['loci'], 
@@ -345,7 +348,6 @@ if args.cmd == "fit":
 
 	if parameters['bias_model'] is None:
 		min_counts = training_data.dataset.signals.sum(dim=(1, 2)).min().item()
-		print(min_counts)
 
 		name = 'bias_fit_parameters'
 		bias_fit_parameters = {key: parameters[key] for key in 
@@ -415,22 +417,34 @@ if args.cmd == "fit":
 		batch_size=parameters['batch_size'])
 
 
-# Make predictions from the full ChromBPNet model
+##########
+# PREDICT
+##########
+
 elif args.cmd == 'predict':
 	os.system("bpnet predict -p {}".format(args.parameters))
 
 
-# Calculate attributions from the full ChromBPNet model
+##########
+# ATTRIBUTE
+##########
+
 elif args.cmd == 'attribute':
 	os.system("bpnet attribute -p {}".format(args.parameters))
 
 
-# Marginalize motifs
+##########
+# MARGINALIZE
+##########
+
 elif args.cmd == 'marginalize':
 	os.system("bpnet marginalize -p {}".format(args.parameters))
 
 
-# Run everything for ChromBPNet
+##########
+# PIPELINE
+##########
+
 elif args.cmd == 'pipeline':
 	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
 	model_name = parameters['name']
@@ -445,9 +459,13 @@ elif args.cmd == 'pipeline':
 
 		fit_parameters = {key: parameters[key] for key in 
 			default_fit_parameters}
-		for parameter, value in parameters['fit_parameters'].items():
+		for parameter, value in parameters['chrombpnet_fit_parameters'].items():
 			if value is not None:
 				fit_parameters[parameter] = value
+
+		for parameter, value in parameters['bias_fit_parameters'].items():
+			if value is not None:
+				fit_parameters['bias_fit_parameters'][parameter] = value
 
 		with open(name, 'w') as outfile:
 			outfile.write(json.dumps(fit_parameters, sort_keys=True, indent=4))
@@ -462,7 +480,8 @@ elif args.cmd == 'pipeline':
 		parameters['accessibility_model'] = (model_name + 
 			'.accessibility.torch')
 
-	del parameters['bias_fit_parameters'], parameters['fit_parameters']
+	del parameters['bias_fit_parameters']
+	del parameters['chrombpnet_fit_parameters']
 
 	# Run pipeline with ChromBPNet model
 	name = '{}.chrombpnet.pipeline.json'.format(parameters['name'])
