@@ -20,6 +20,9 @@ from bpnetlite.bpnet import ProfileWrapper
 from bpnetlite.bpnet import ControlWrapper
 from bpnetlite.bpnet import _ProfileLogitScaling
 
+from bpnetlite.chrombpnet import ChromBPNet
+from bpnetlite.chrombpnet import _Log, _Exp
+
 from bpnetlite.marginalize import marginalization_report
 
 from tangermeme.io import extract_loci
@@ -99,6 +102,12 @@ pipeline_parser.add_argument("-p", "--parameters", type=str, required=True,
 # Default Parameters
 ###
 
+training_chroms = ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 
+	'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 
+	'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
+
+validation_chroms = ['chr8', 'chr10']
+
 default_fit_parameters = {
 	'n_filters': 64,
 	'n_layers': 8,
@@ -119,10 +128,8 @@ default_fit_parameters = {
 	'min_counts': 0,
 	'max_counts': 99999999,
 
-	'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
-		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
-	'validation_chroms': ['chr8', 'chr10'],
+	'training_chroms': training_chroms,
+	'validation_chroms': validation_chroms,
 	'sequences': None,
 	'loci': None,
 	'signals': None,
@@ -135,9 +142,7 @@ default_predict_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-		'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 
-		'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
+	'chroms': training_chroms,
 	'sequences': None,
 	'loci': None,
 	'controls': None,
@@ -151,9 +156,7 @@ default_attribute_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
-		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
-		'chr20', 'chr21', 'chr22', 'chrX'],
+	'chroms': training_chroms,
 	'sequences': None,
 	'loci': None,
 	'model': None,
@@ -162,7 +165,7 @@ default_attribute_parameters = {
 	'attr_filename': 'attr.npz',
 	'n_shuffles':20,
 	'random_state':0,
-	'warning_threshold':1e-3
+	'warning_threshold':1e-4
 }
 
 default_marginalize_parameters = {
@@ -170,9 +173,7 @@ default_marginalize_parameters = {
 	'in_window': 2114,
 	'out_window': 1000,
 	'verbose': False,
-	'chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 'chr11', 
-		'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
-		'chr20', 'chr21', 'chr22', 'chrX'],
+	'chroms': training_chroms,
 	'sequences': None,
 	'motifs': None,
 	'loci': None,
@@ -216,10 +217,7 @@ default_pipeline_parameters = {
 	# Fit parameters
 	'fit_parameters': {
 		'batch_size': 64,
-		'training_chroms': ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-			'chr9', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 
-			'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX'],
-		'validation_chroms': ['chr8', 'chr10'],
+		'training_chroms': training_chroms,
 		'sequences': None,
 		'loci': None,
 		'signals': None,
@@ -231,7 +229,7 @@ default_pipeline_parameters = {
 	# Predict parameters
 	'predict_parameters': {
 		'batch_size': 64,
-		'chroms': ['chr8', 'chr10'],
+		'chroms': validation_chroms,
 		'profile_filename': None,
 		'counts_filename': None,
 		'sequences': None,
@@ -245,13 +243,13 @@ default_pipeline_parameters = {
 	# Attribution parameters
 	'attribute_parameters': {
 		'batch_size': 64,
-		'chroms': ['chr8', 'chr10'],
+		'chroms': validation_chroms,
 		'output': 'counts',
 		'loci': None,
 		'ohe_filename': None,
 		'attr_filename': None,
 		'n_shuffles': None,
-		'warning_threshold':1e-3,
+		'warning_threshold':1e-4,
 		'random_state': None,
 		'verbose': None
 
@@ -275,6 +273,7 @@ default_pipeline_parameters = {
 	'marginalize_parameters': {
 		'loci': None,
 		'n_loci': 100,
+		'batch_size': 64,
 		'shuffle': False,
 		'random_state': None,
 		'output_folder': None,
@@ -466,7 +465,10 @@ elif args.cmd == 'predict':
 	else:
 		X, X_ctl = examples
 
-	y_profiles, y_counts = predict(model, X, args=(X_ctl,), 
+	if X_ctl is not None:
+		X_ctl = (X_ctl,)
+
+	y_profiles, y_counts = predict(model, X, args=X_ctl, 
 		batch_size=parameters['batch_size'], device='cuda', 
 		verbose=parameters['verbose'])
 
@@ -485,6 +487,10 @@ elif args.cmd == 'attribute':
 
 	model = torch.load(parameters['model']).cuda()
 
+	dtype = torch.float32
+	if parameters['output'] == 'profile' or isinstance(model, ChromBPNet):
+		dtype = torch.float64
+
 	X = extract_loci(
 		sequences=parameters['sequences'],
 		loci=parameters['loci'],
@@ -493,18 +499,23 @@ elif args.cmd == 'attribute':
 		verbose=parameters['verbose']
 	)
 
+	X = X[X.sum(dim=(1, 2)) == X.shape[-1]]
+
 	model = ControlWrapper(model)
 	if parameters['output'] == 'counts':
 		wrapper = CountWrapper(model)
-
 	elif parameters['output'] == 'profile':
-		wrapper = ProfileWrapper(model).double()
+		wrapper = ProfileWrapper(model)
 	else:
 		raise ValueError("output must be either `counts` or `profile`.")
 
-	X_attr = deep_lift_shap(wrapper, X.type(next(model.parameters()).dtype),
+	X_attr = deep_lift_shap(wrapper.type(dtype), X.type(dtype),
 		hypothetical=True,
-		additional_nonlinear_ops={_ProfileLogitScaling: _nonlinear},
+		additional_nonlinear_ops={
+			_ProfileLogitScaling: _nonlinear,
+			_Log: _nonlinear,
+			_Exp: _nonlinear
+		},
 		n_shuffles=parameters['n_shuffles'],
 		batch_size=parameters['batch_size'],
 		random_state=parameters['random_state'],
@@ -546,7 +557,8 @@ elif args.cmd == 'marginalize':
 		X = X[:parameters['n_loci']]
 
 	marginalization_report(model, parameters['motifs'], X, 
-		parameters['output_filename'], minimal=parameters['minimal'])
+		parameters['output_filename'], batch_size=parameters['batch_size'], 
+		minimal=parameters['minimal'], verbose=parameters['verbose'])
 
 
 ##########
@@ -632,7 +644,7 @@ elif args.cmd == 'pipeline':
 
 	report_parameters = parameters['modisco_report_parameters']
 	_check_set(report_parameters, "verbose", parameters["verbose"])
-	_check_set(report_parameters, "output_folder", pname+"{}_modisco/")
+	_check_set(report_parameters, "output_folder", pname+"_modisco/")
 
 	if report_parameters['verbose']:
 		print("\nStep 5: TF-MoDISco reports")

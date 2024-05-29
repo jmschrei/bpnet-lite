@@ -75,11 +75,7 @@ class _ProfileLogitScaling(torch.nn.Module):
 
 	def forward(self, logits):
 		y_softmax = self.softmax(logits)
-		y = logits * y_softmax
-		return y
-		#print("a") 
-		#y_lsm = torch.nn.functional.log_softmax(logits, dim=-1)
-		#return torch.sign(logits) * torch.exp(torch.log(abs(logits)) + y_lsm)
+		return logits * y_softmax
 
 
 class ProfileWrapper(torch.nn.Module):
@@ -305,7 +301,6 @@ class BPNet(torch.nn.Module):
 
 		# counts prediction
 		X = torch.mean(X[:, :, start-37:end+37], dim=2)
-
 		if X_ctl is not None:
 			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], dim=(1, 2))
 			X_ctl = X_ctl.unsqueeze(-1)
@@ -383,7 +378,7 @@ class BPNet(torch.nn.Module):
 			y_valid_counts = y_valid.sum(dim=2)
 
 		if X_ctl_valid is not None:
-			X_ctl_valid = X_ctl_valid.cuda()
+			X_ctl_valid = (X_ctl_valid.cuda(),)
 
 
 		iteration = 0
@@ -437,7 +432,7 @@ class BPNet(torch.nn.Module):
 
 						tic = time.time()
 						y_profile, y_counts = predict(self, X_valid, 
-							args=(X_ctl_valid,), batch_size=batch_size, 
+							args=X_ctl_valid, batch_size=batch_size, 
 							device='cuda')
 
 						z = y_profile.shape
@@ -562,6 +557,7 @@ class BPNet(torch.nn.Module):
 		model.linear.bias = convert_b(w[name][b])
 		return model
 
+
 	@classmethod
 	def from_chrombpnet(cls, filename):
 		"""Loads a model from ChromBPNet TensorFlow format.
@@ -571,6 +567,83 @@ class BPNet(torch.nn.Module):
 		of an accessibility model and a bias model and that this will load
 		one of the two. Use `ChromBPNet.from_chrombpnet` to end up with the
 		entire ChromBPNet model.
+
+
+		Parameters
+		----------
+		filename: str
+			The name of the h5 file that stores the trained model parameters.
+
+
+		Returns
+		-------
+		model: BPNet
+			A BPNet model compatible with this repository in PyTorch.
+		"""
+
+		h5 = h5py.File(filename, "r")
+		w = h5['model_weights']
+
+		if 'bpnet_1conv' in w.keys():
+			prefix = ""
+		else:
+			prefix = "wo_bias_"
+
+		namer = lambda prefix, suffix: '{0}{1}/{0}{1}'.format(prefix, suffix)
+		k, b = 'kernel:0', 'bias:0'
+
+		n_layers = 0
+		for layer_name in w.keys():
+			try:
+				idx = int(layer_name.split("_")[-1].replace("conv", ""))
+				n_layers = max(n_layers, idx)
+			except:
+				pass
+
+		name = namer(prefix, "bpnet_1conv")
+		n_filters = w[name][k].shape[2]
+
+		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
+			n_control_tracks=0, trimming=(2114-1000)//2)
+
+		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
+			x[:]).permute(2, 1, 0))
+		convert_b = lambda x: torch.nn.Parameter(torch.tensor(x[:]))
+
+		iname = namer(prefix, 'bpnet_1st_conv')
+
+		model.iconv.weight = convert_w(w[iname][k])
+		model.iconv.bias = convert_b(w[iname][b])
+		model.iconv.padding = (21 - 1) // 2
+
+		for i in range(1, n_layers+1):
+			lname = namer(prefix, 'bpnet_{}conv'.format(i))
+
+			model.rconvs[i-1].weight = convert_w(w[lname][k])
+			model.rconvs[i-1].bias = convert_b(w[lname][b])
+
+		prefix = prefix + "bpnet_" if prefix != "" else ""
+
+		fname = namer(prefix, 'prof_out_precrop')
+		model.fconv.weight = convert_w(w[fname][k])
+		model.fconv.bias = convert_b(w[fname][b])
+		model.fconv.padding = (75 - 1) // 2
+
+		name = namer(prefix, "logcount_predictions")
+		model.linear.weight = torch.nn.Parameter(torch.tensor(w[name][k][:].T))
+		model.linear.bias = convert_b(w[name][b])
+		return model
+
+
+	@classmethod
+	def from_bpnet(cls, filename):
+		"""Loads a model from BPNet TensorFlow format.
+	
+		This method will allow you to load a BPNet model from the basepairmodels
+		repo that has been saved in TensorFlow format. You do not need to have
+		TensorFlow installed to use this function. The result will be a model
+		whose predictions and attributions are identical to those produced when
+		using the TensorFlow code.
 
 
 		Parameters

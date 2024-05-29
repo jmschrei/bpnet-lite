@@ -17,6 +17,22 @@ from tqdm import trange
 from tangermeme.predict import predict
 
 
+class _Exp(torch.nn.Module):
+	def __init__(self):
+		super(_Exp, self).__init__()
+
+	def forward(self, X):
+		return torch.exp(X)
+
+
+class _Log(torch.nn.Module):
+	def __init__(self):
+		super(_Log, self).__init__()
+
+	def forward(self, X):
+		return torch.log(X)
+
+
 class ChromBPNet(torch.nn.Module):
 	"""A ChromBPNet model.
 
@@ -63,6 +79,10 @@ class ChromBPNet(torch.nn.Module):
 		self.logger = None
 		self.n_control_tracks = accessibility.n_control_tracks
 		self.n_outputs = 1
+		self._log = _Log()
+		self._exp1 = _Exp()
+		self._exp2 = _Exp()
+
 
 	def forward(self, X, X_ctl=None):
 		"""A forward pass through the network.
@@ -92,8 +112,7 @@ class ChromBPNet(torch.nn.Module):
 		bias_profile, bias_counts = self.bias(X)
 
 		y_profile = acc_profile + bias_profile
-		y_counts = torch.logsumexp(torch.stack([acc_counts, bias_counts]), 
-			dim=0)
+		y_counts = self._log(self._exp1(acc_counts) + self._exp2(bias_counts))
 		
 		return y_profile, y_counts
 
@@ -256,6 +275,7 @@ class ChromBPNet(torch.nn.Module):
 		torch.save(self, "{}.final.torch".format(self.name))
 		torch.save(self, "{}.accessibility.final.torch".format(self.name))
 
+
 	@classmethod
 	def from_chrombpnet_lite(self, bias_model, accessibility_model, name):
 		"""Load a ChromBPNet model trained in ChromBPNet-lite.
@@ -294,6 +314,7 @@ class ChromBPNet(torch.nn.Module):
 		bias = BPNet.from_chrombpnet_lite(bias_model)
 		acc = BPNet.from_chrombpnet_lite(accessibility_model)
 		return ChromBPNet(bias, acc, name)
+
 
 	@classmethod
 	def from_chrombpnet(self, bias_model, accessibility_model, name):

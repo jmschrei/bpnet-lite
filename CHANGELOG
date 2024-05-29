@@ -2,6 +2,32 @@
 Release History
 ===============
 
+Version 0.7.2
+==============
+
+Highlights
+----------
+
+	- Complete inclusion of tangermeme as the backend for operations
+	- Remove the `predict` method for models in favor of `tangermeme.predict`
+	- Remove attribute.py in favor of `tangermeme.deep_lift_shap`
+	- Remove marginalization functions in favor of `tangermeme.marginalize`
+	- Remove plotting functions in favor of `tangermeme.plot`
+	- Alter the `bpnet` and `chrombpnet` command-line tools to account for
+	these changes.
+	- Add in `_Log` and `_Exp` as layers for the ChromBPNet model so that they
+	can be registered as non-linear functions for `deep_lift_shap`.
+
+
+
+Version 0.7.1
+==============
+
+Highlights
+----------
+
+	- Begin inclusion of tangermeme into the backend.
+
 
 Version 0.7.0
 ==============
@@ -14,6 +40,7 @@ Highlights
 	functionality and usage should be the same.
 	- Changed the nomenclature from "interpret" to "attribute" to be more
 	consistent with the name of the function and what is used colloquially.
+
 
 
 Version 0.6.0
@@ -42,6 +69,7 @@ Highlights
 	- Fixed various minor bugs.
 
 
+
 Version 0.5.6
 ==============
 
@@ -63,6 +91,8 @@ Highlights
 
 	- Fixed an issue with ChromBPNet reading.
 
+
+
 Version 0.5.4
 ==============
 
@@ -72,6 +102,7 @@ Highlights
 	- Added in reading of TensorFlow-formatted ChromBPNet models from the
 	official repo using the `from_chrombpnet` commands to the BPNet and
 	ChromBPNet objects.
+
 
 
 Version 0.5.2
@@ -87,6 +118,7 @@ Highlights
 	`calculate_attributions` function and the `DeepLiftShap` object. The first
 	will print convergence deltas for every example that gets explained and the
 	second will raise a warning if the divergence is higher than it.
+
 
 
 Version 0.5.0
@@ -106,6 +138,7 @@ Highlights
 	- Fixed issue with attributions where performance would degrade over time.
 
 
+
 Version 0.4.0
 ==============
 
@@ -118,6 +151,7 @@ Highlights
     model training to inference, attribution, tfmodisco, and marginalization
 
 
+
 Version 0.3.0
 ==============
 
@@ -125,6 +159,7 @@ Highlights
 ----------
 
 	- I forgot.
+
 
 
 Version 0.2.0

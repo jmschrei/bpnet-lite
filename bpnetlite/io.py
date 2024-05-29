@@ -185,7 +185,7 @@ def PeakGenerator(loci, sequences, signals, controls=None, chroms=None,
 	"""
 
 	X = extract_loci(loci=loci, sequences=sequences, signals=signals, 
-		controls=controls, chroms=chroms, in_window=in_window, 
+		in_signals=controls, chroms=chroms, in_window=in_window, 
 		out_window=out_window, max_jitter=max_jitter, min_counts=min_counts,
 		max_counts=max_counts, verbose=verbose)
 
@@ -194,6 +194,8 @@ def PeakGenerator(loci, sequences, signals, controls=None, chroms=None,
 	else:
 		sequences, signals_ = X
 		controls_ = None
+
+	sequences = sequences.float()
 
 	X_gen = DataGenerator(sequences, signals_, controls=controls_, 
 		in_window=in_window, out_window=out_window, max_jitter=max_jitter,
