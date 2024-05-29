@@ -131,8 +131,13 @@ class CountWrapper(torch.nn.Module):
 class BPNet(torch.nn.Module):
 	"""A basic BPNet model with stranded profile and total count prediction.
 
-	This is a reference implementation for BPNet. The model takes in
-	one-hot encoded sequence, runs it through: 
+	This is a reference implementation for BPNet models. It exactly matches the
+	architecture in the official ChromBPNet repository. It is very similar to
+	the implementation in the official basepairmodels repository but differs in
+	when the activation function is applied for the resifual layers. See the
+	BasePairNet object below for an implementation that matches that repository. 
+
+	The model takes in one-hot encoded sequence, runs it through: 
 
 	(1) a single wide convolution operation 
 
@@ -170,10 +175,6 @@ class BPNet(torch.nn.Module):
 	(4) The count prediction task is predicting the total counts across
 	both strands. The counts are then distributed across strands according
 	to the single log softmax from 3.
-
-	Note that this model is also used as components in the ChromBPNet model,
-	as both the bias model and the accessibility model. Both components are
-	the same BPNet architecture but trained on different loci.
 
 
 	Parameters
@@ -635,6 +636,157 @@ class BPNet(torch.nn.Module):
 		return model
 
 
+class BasePairNet(torch.nn.Module):
+	"""A BPNet implementation matching that in basepairmodels
+
+	This is a BPNet implementation that matches the one in basepairmodels and
+	can be used to load models trained from that repository, e.g., those trained
+	as part of the atlas project. The architecture of the model is identical to
+	`BPNet` except that output from the residual layers is added to the 
+	pre-activation outputs from the previous layer, rather than to the
+	post-activation outputs from the previous layer. Additionally, the count
+	prediction head takes the sum of the control track counts, adds two instead
+	of one, and then takes the log. Neither detail dramatically changes
+	performance of the model but is necessary to account for when loading
+	trained models.
+	
+
+	Parameters
+	----------
+	n_filters: int, optional
+		The number of filters to use per convolution. Default is 64.
+
+	n_layers: int, optional
+		The number of dilated residual layers to include in the model.
+		Default is 8.
+
+	n_outputs: int, optional
+		The number of profile outputs from the model. Generally either 1 or 2 
+		depending on if the data is unstranded or stranded. Default is 2.
+
+	n_control_tracks: int, optional
+		The number of control tracks to feed into the model. When predicting
+		TFs, this is usually 2. When predicting accessibility, this is usualy
+		0. When 0, this input is removed from the model. Default is 2.
+
+	alpha: float, optional
+		The weight to put on the count loss.
+
+	profile_output_bias: bool, optional
+		Whether to include a bias term in the final profile convolution.
+		Removing this term can help with attribution stability and will usually
+		not affect performance. Default is True.
+
+	count_output_bias: bool, optional
+		Whether to include a bias term in the linear layer used to predict
+		counts. Removing this term can help with attribution stability but
+		may affect performance. Default is True.
+
+	name: str or None, optional
+		The name to save the model to during training.
+
+	trimming: int or None, optional
+		The amount to trim from both sides of the input window to get the
+		output window. This value is removed from both sides, so the total
+		number of positions removed is 2*trimming.
+
+	verbose: bool, optional
+		Whether to display statistics during training. Setting this to False
+		will still save the file at the end, but does not print anything to
+		screen during training. Default is True.
+	"""
+
+	def __init__(self, n_filters=64, n_layers=8, n_outputs=2, 
+		n_control_tracks=2, alpha=1, profile_output_bias=True, 
+		count_output_bias=True, name=None, trimming=None, verbose=True):
+		super(BasePairNet, self).__init__()
+		self.n_filters = n_filters
+		self.n_layers = n_layers
+		self.n_outputs = n_outputs
+		self.n_control_tracks = n_control_tracks
+
+		self.alpha = alpha
+		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
+		self.trimming = trimming or 2 ** n_layers
+
+		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
+		self.irelu = torch.nn.ReLU()
+
+		self.rconvs = torch.nn.ModuleList([
+			torch.nn.Conv1d(n_filters, n_filters, kernel_size=3, padding=2**i, 
+				dilation=2**i) for i in range(1, self.n_layers+1)
+		])
+		self.rrelus = torch.nn.ModuleList([
+			torch.nn.ReLU() for i in range(1, self.n_layers+1)
+		])
+
+		self.fconv = torch.nn.Conv1d(n_filters+n_control_tracks, n_outputs, 
+			kernel_size=75, padding=37, bias=profile_output_bias)
+		
+		n_count_control = 1 if n_control_tracks > 0 else 0
+		self.linear = torch.nn.Linear(n_filters+n_count_control, 1, 
+			bias=count_output_bias)
+
+		self.logger = Logger(["Epoch", "Iteration", "Training Time",
+			"Validation Time", "Training MNLL", "Training Count MSE", 
+			"Validation MNLL", "Validation Profile Pearson", 
+			"Validation Count Pearson", "Validation Count MSE", "Saved?"], 
+			verbose=verbose)
+
+
+	def forward(self, X, X_ctl=None):
+		"""A forward pass of the model.
+
+		This method takes in a nucleotide sequence X, a corresponding
+		per-position value from a control track, and a per-locus value
+		from the control track and makes predictions for the profile 
+		and for the counts. This per-locus value is usually the
+		log(sum(X_ctl_profile)+1) when the control is an experimental
+		read track but can also be the output from another model.
+
+		Parameters
+		----------
+		X: torch.tensor, shape=(batch_size, 4, length)
+			The one-hot encoded batch of sequences.
+
+		X_ctl: torch.tensor or None, shape=(batch_size, n_strands, length)
+			A value representing the signal of the control at each position in 
+			the sequence. If no controls, pass in None. Default is None.
+
+		Returns
+		-------
+		y_profile: torch.tensor, shape=(batch_size, n_strands, out_length)
+			The output predictions for each strand trimmed to the output
+			length.
+		"""
+
+		start, end = self.trimming, X.shape[2] - self.trimming
+	
+		X = self.iconv(X)
+		for i in range(self.n_layers):
+			X_a = self.rrelus[i](X)
+			X_conv = self.rconvs[i](X_a)
+			X = torch.add(X, X_conv)
+		X = self.irelu(X)
+	
+		if X_ctl is None:
+			X_w_ctl = X
+		else:
+			X_w_ctl = torch.cat([X, X_ctl], dim=1)
+	
+		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
+	
+		# counts prediction
+		X = torch.mean(X[:, :, start-37:end+37], dim=2)
+		if X_ctl is not None:
+			X_ctl = torch.sum(X_ctl[:, :, start:end], dim=(1, 2))
+			X_ctl = X_ctl.unsqueeze(-1)
+			X = torch.cat([X, torch.log(X_ctl+2)], dim=-1)
+	
+		y_counts = self.linear(X).reshape(X.shape[0], 1)
+		return y_profile, y_counts
+
+
 	@classmethod
 	def from_bpnet(cls, filename):
 		"""Loads a model from BPNet TensorFlow format.
@@ -659,54 +811,49 @@ class BPNet(torch.nn.Module):
 		"""
 
 		h5 = h5py.File(filename, "r")
-		w = h5['model_weights']
+		w, k, b = h5['model_weights'], 'kernel:0', 'bias:0'
 
-		if 'bpnet_1conv' in w.keys():
-			prefix = ""
-		else:
-			prefix = "wo_bias_"
+		extract = lambda name, suffix: w['{0}/{0}/{1}'.format(name, suffix)][:]
+		convert_w = lambda x: torch.nn.Parameter(torch.tensor(x).permute(2, 1, 
+			0))
+		convert_b = lambda x: torch.nn.Parameter(torch.tensor(x))
 
-		namer = lambda prefix, suffix: '{0}{1}/{0}{1}'.format(prefix, suffix)
-		k, b = 'kernel:0', 'bias:0'
-
-		n_layers = 0
+		n_layers, n_filters = 0, extract("main_conv_0", k).shape[2]
 		for layer_name in w.keys():
-			try:
-				idx = int(layer_name.split("_")[-1].replace("conv", ""))
-				n_layers = max(n_layers, idx)
-			except:
-				pass
+			if 'main_dil_conv' in layer_name:
+				n_layers = max(n_layers, int(layer_name.split("_")[-1]))
 
-		name = namer(prefix, "bpnet_1conv")
-		n_filters = w[name][k].shape[2]
-
-		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
-			n_control_tracks=0, trimming=(2114-1000)//2)
-
-		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
-			x[:]).permute(2, 1, 0))
-		convert_b = lambda x: torch.nn.Parameter(torch.tensor(x[:]))
-
-		iname = namer(prefix, 'bpnet_1st_conv')
-
-		model.iconv.weight = convert_w(w[iname][k])
-		model.iconv.bias = convert_b(w[iname][b])
-		model.iconv.padding = (21 - 1) // 2
+		model = cls(n_layers=n_layers, n_filters=n_filters, n_outputs=2,
+			n_control_tracks=2, trimming=(2114-1000)//2)
+		
+		model.iconv.weight = convert_w(extract("main_conv_0", k))
+		model.iconv.bias = convert_b(extract("main_conv_0", b))
+		model.iconv.padding = ((model.iconv.weight.shape[-1] - 1) // 2,)
 
 		for i in range(1, n_layers+1):
-			lname = namer(prefix, 'bpnet_{}conv'.format(i))
+			lname = "main_dil_conv_{}".format(i)
+			model.rconvs[i-1].weight = convert_w(extract(lname, k))
+			model.rconvs[i-1].bias = convert_b(extract(lname, b))
 
-			model.rconvs[i-1].weight = convert_w(w[lname][k])
-			model.rconvs[i-1].bias = convert_b(w[lname][b])
+		w0 = model.fconv.weight.numpy(force=True)
+		wph = extract("main_profile_head", k)
+		wpp = extract("profile_predictions", k)[0, :2]
 
-		prefix = prefix + "bpnet_" if prefix != "" else ""
+		conv_weight = numpy.zeros_like(w0.transpose(2, 1, 0))
+		conv_weight[:, :n_filters] = wph.dot(wpp) 
+		conv_weight[37, n_filters:] = extract("profile_predictions", k)[0, 2:]
+		model.fconv.weight = convert_w(conv_weight)
+		model.fconv.bias = (convert_b(extract("main_profile_head", b) + 
+			extract("profile_predictions", b)))
+		model.fconv.padding = ((model.fconv.weight.shape[-1] - 1) // 2,)
 
-		fname = namer(prefix, 'prof_out_precrop')
-		model.fconv.weight = convert_w(w[fname][k])
-		model.fconv.bias = convert_b(w[fname][b])
-		model.fconv.padding = (75 - 1) // 2
-
-		name = namer(prefix, "logcount_predictions")
-		model.linear.weight = torch.nn.Parameter(torch.tensor(w[name][k][:].T))
-		model.linear.bias = convert_b(w[name][b])
+		linear_weight = numpy.zeros_like(model.linear.weight.numpy(force=True))
+		linear_weight[:, :n_filters] = (extract("main_counts_head", k).T * 
+			extract("logcounts_predictions", k)[0])
+		linear_weight[:, -1] = extract("logcounts_predictions", k)[1]
+		
+		model.linear.weight = convert_b(linear_weight)
+		model.linear.bias = (convert_b(extract("main_counts_head", b) * 
+			extract("logcounts_predictions", k)[0] + 
+			extract("logcounts_predictions", b)))
 		return model

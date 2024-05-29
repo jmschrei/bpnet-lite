@@ -2,6 +2,21 @@
 Release History
 ===============
 
+Version 0.7.3
+==============
+
+Highlights
+----------
+
+	- Added `BasePairNet` in `bpnetlite.bpnet` which is an implementation of the
+	model from the official `basepairmodels`
+	- Added `BasePairNet.from_bpnet` to load TensorFlow-trained models from
+	`basepairmodels` into the PyTorch wrapper
+	- Removed a few dependencies that are no longer needed after using
+	tangermeme
+
+
+
 Version 0.7.2
 ==============
 

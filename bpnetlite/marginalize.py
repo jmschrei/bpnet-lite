@@ -2,13 +2,10 @@
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
 import os
-import time
 import numpy
 import torch
 import pandas
-import pyfaidx
 import seaborn
-import logomaker
 
 from bpnetlite.bpnet import _ProfileLogitScaling
 from bpnetlite.bpnet import CountWrapper

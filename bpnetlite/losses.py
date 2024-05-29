@@ -41,6 +41,7 @@ def MNLLLoss(logps, true_counts):
 	log_prod_exp = torch.sum(true_counts * logps, dim=-1)
 	return -log_fact_sum + log_prod_fact - log_prod_exp
 
+
 def log1pMSELoss(log_predicted_counts, true_counts):
 	"""A MSE loss on the log(x+1) of the inputs.
 
