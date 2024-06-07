@@ -2,6 +2,18 @@
 Release History
 ===============
 
+
+Version 0.7.4
+==============
+
+Highlights
+----------
+
+	- Re-added the `attribute.py` file back in with a `deep_lift_shap` function
+	that wraps tangermeme's function but passes in the layers that must be
+	registered. 
+
+
 Version 0.7.3
 ==============
 

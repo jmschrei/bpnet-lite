@@ -18,19 +18,15 @@ from bpnetlite.bpnet import BPNet
 from bpnetlite.bpnet import CountWrapper
 from bpnetlite.bpnet import ProfileWrapper
 from bpnetlite.bpnet import ControlWrapper
-from bpnetlite.bpnet import _ProfileLogitScaling
 
 from bpnetlite.chrombpnet import ChromBPNet
-from bpnetlite.chrombpnet import _Log, _Exp
 
+from bpnetlite.attribute import deep_lift_shap
 from bpnetlite.marginalize import marginalization_report
 
 from tangermeme.io import extract_loci
 from tangermeme.match import extract_matching_loci
 from tangermeme.predict import predict
-
-from tangermeme.deep_lift_shap import _nonlinear
-from tangermeme.deep_lift_shap import deep_lift_shap
 
 import json
 
@@ -511,11 +507,6 @@ elif args.cmd == 'attribute':
 
 	X_attr = deep_lift_shap(wrapper.type(dtype), X.type(dtype),
 		hypothetical=True,
-		additional_nonlinear_ops={
-			_ProfileLogitScaling: _nonlinear,
-			_Log: _nonlinear,
-			_Exp: _nonlinear
-		},
 		n_shuffles=parameters['n_shuffles'],
 		batch_size=parameters['batch_size'],
 		random_state=parameters['random_state'],
