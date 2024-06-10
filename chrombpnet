@@ -348,7 +348,8 @@ if args.cmd == "fit":
 	trimming = (parameters['in_window'] - parameters['out_window']) // 2
 
 	if parameters['bias_model'] is None:
-		min_counts = training_data.dataset.signals.sum(dim=(1, 2)).min().item()
+		counts = training_data.dataset.signals.sum(dim=(1, 2))
+		min_counts = torch.quantile(counts, 0.01).item()
 
 		name = 'bias_fit_parameters'
 		bias_fit_parameters = {key: parameters[key] for key in 
@@ -356,6 +357,8 @@ if args.cmd == "fit":
 		for parameter, value in bias_fit_parameters[name].items():
 			if value is not None:
 				bias_fit_parameters[parameter] = value
+			if parameter == 'loci' and value is None:
+				bias_fit_parameters[parameter] = parameters['negatives']
 
 		del bias_fit_parameters['negatives'], bias_fit_parameters['beta']
 			

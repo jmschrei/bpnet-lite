@@ -3,6 +3,23 @@ Release History
 ===============
 
 
+Version 0.8.0
+==============
+
+Highlights
+----------
+
+	- When training ChromBPNet bias models from the command line and no loci
+	are provided for training the bias model, the default is changed to inherit
+	from `negatives` instead of `loci`. Colloquially, when the user provides a
+	set of negatives and peak loci to train ChromBPNet, the default is now that
+	the bias model will be trained on the negatives instead of incorrectly on
+	the peaks.
+	- When calculating the maximum number of reads a negative region can have
+	when training the bias model, changed from using the minimum number of reads
+	in the peaks to the 1st quantile of reads because it is more robust.
+
+
 Version 0.7.4
 ==============
 
