@@ -401,6 +401,7 @@ if args.cmd == "fit":
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
 		max_jitter=0,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
 		verbose=parameters['verbose']
 	)
 

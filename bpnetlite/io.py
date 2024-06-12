@@ -187,7 +187,8 @@ def PeakGenerator(loci, sequences, signals, controls=None, chroms=None,
 	X = extract_loci(loci=loci, sequences=sequences, signals=signals, 
 		in_signals=controls, chroms=chroms, in_window=in_window, 
 		out_window=out_window, max_jitter=max_jitter, min_counts=min_counts,
-		max_counts=max_counts, verbose=verbose)
+		max_counts=max_counts, ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
+		verbose=verbose)
 
 	if controls is not None:
 		sequences, signals_, controls_ = X

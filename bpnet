@@ -395,6 +395,7 @@ if args.cmd == "fit":
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
 		max_jitter=0,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
 		verbose=parameters['verbose']
 	)
 
@@ -449,6 +450,7 @@ elif args.cmd == 'predict':
 		loci=parameters['loci'],
 		chroms=parameters['chroms'],
 		max_jitter=0,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
 		verbose=parameters['verbose']
 	)
 
@@ -492,6 +494,7 @@ elif args.cmd == 'attribute':
 		loci=parameters['loci'],
 		chroms=parameters['chroms'],
 		max_jitter=0,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
 		verbose=parameters['verbose']
 	)
 
@@ -535,6 +538,7 @@ elif args.cmd == 'marginalize':
 		loci=parameters['loci'],
 		chroms=parameters['chroms'],
 		max_jitter=0,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
 		n_loci=parameters['n_loci'],
 		verbose=parameters['verbose']
 	).float()
