@@ -615,7 +615,7 @@ class BPNet(torch.nn.Module):
 
 		model.iconv.weight = convert_w(w[iname][k])
 		model.iconv.bias = convert_b(w[iname][b])
-		model.iconv.padding = (21 - 1) // 2
+		model.iconv.padding = ((21 - 1) // 2,)
 
 		for i in range(1, n_layers+1):
 			lname = namer(prefix, 'bpnet_{}conv'.format(i))
@@ -628,7 +628,7 @@ class BPNet(torch.nn.Module):
 		fname = namer(prefix, 'prof_out_precrop')
 		model.fconv.weight = convert_w(w[fname][k])
 		model.fconv.bias = convert_b(w[fname][b])
-		model.fconv.padding = (75 - 1) // 2
+		model.fconv.padding = ((75 - 1) // 2,)
 
 		name = namer(prefix, "logcount_predictions")
 		model.linear.weight = torch.nn.Parameter(torch.tensor(w[name][k][:].T))
