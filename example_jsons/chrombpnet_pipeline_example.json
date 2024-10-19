@@ -58,7 +58,7 @@
         "signals": null,
         "verbose": null
     },
-    "interpret_parameters": {
+    "attribute_parameters": {
         "batch_size": 1,
         "chroms": ["chr8", "chr10"],
         "output": "profile",
