@@ -79,19 +79,19 @@ Default parameters are specified in the command-line tools themselves. When a va
 }
 ```
 
-### BPNet Interpret
+### BPNet Attribute
 
 ```
 {
    "batch_size": 64,             # Batch size to use for training and validation
    "in_window": 2114,            # Length of the input window
    "out_window": 1000,           # Length of the output window
-   "verbose": true,              # Whether to print out a progress bar during interpretation
+   "verbose": true,              # Whether to print out a progress bar during attribution
    "chroms": ["chr8", "chr10"],  # Chromosomes whose peaks to make predictions for
    "model":"bpnet.64.8.torch",   # Model to use for calculating attributions
 
    "sequences":"../../oak/common/hg38/hg38.fa",  # FASTA file of the genome to train on
-   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",  # Loci to interpret (can be a list)
+   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",  # Loci to attribute (can be a list)
 
    "output": "profile",          # Which head to calculate attributions for
    "ohe_filename": "ohe.npz",    # Filename to store one-hot encodings of the sequences
@@ -203,20 +203,20 @@ When running the pipeline command, JSONs for each of the steps in the pipeline w
 		"verbose": null    # Whether to print out a log to the terminal during training
 	},
    
-   # Parameters to pass into the interpret step
-	"interpret_parameters": {
+   # Parameters to pass into the attribute step
+	"attribute_parameters": {
 		"batch_size": 1,      # Batch size to use for training and validation
 		"output": "profile",  # Which head to calculate attributions for
 		"chroms": ["chr8"],   # Chromosomes to make predictions for
       
-      # Loci to make interpretations for (can be a list)
+      # Loci to make attributions for (can be a list)
 		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
       
 		"ohe_filename": null,   # Filename to store one-hot encodings of the sequences
 		"attr_filename": null,  # Filename to store DeepLIFT/SHAP values for the sequences
 		"n_shuffles": 20,       # Number of GC-matched shuffles to perform
 		"random_state": null,   # A seed to control the shuffles
-		"verbose": null         # Whether to print out a progress bar during interpretation
+		"verbose": null         # Whether to print out a progress bar during attribution
 
 	},
    
@@ -409,20 +409,20 @@ When running the pipeline command, JSONs for each of the steps in the pipeline w
 		"verbose": null    # Whether to print out a log to the terminal during training
 	},
    
-   # Parameters to pass into the interpret step
-	"interpret_parameters": {
+   # Parameters to pass into the attribute step
+	"attribute_parameters": {
 		"batch_size": 1,      # Batch size to use for training and validation
 		"output": "profile",  # Which head to calculate attributions for
 		"chroms": ["chr8"],   # Chromosomes to make predictions for
       
-      # Loci to make interpretations for (can be a list)
+      # Loci to make attributions for (can be a list)
 		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
       
 		"ohe_filename": null,   # Filename to store one-hot encodings of the sequences
 		"attr_filename": null,  # Filename to store DeepLIFT/SHAP values for the sequences
 		"n_shuffles": 20,       # Number of GC-matched shuffles to perform
 		"random_state": null,   # A seed to control the shuffles
-		"verbose": null         # Whether to print out a progress bar during interpretation
+		"verbose": null         # Whether to print out a progress bar during attribution
 
 	},
    
