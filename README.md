@@ -1,5 +1,7 @@
 # bpnet-lite
 
+[![PyPI Downloads](https://static.pepy.tech/badge/bpnet-lite)](https://pepy.tech/projects/bpnet-lite)
+
 > **Note**
 > IMPORTANT: bpnet-lite is not meant to replace the full service implementations of BPNet or ChromBPNet. Please see the official repositories for those projects for TensorFlow/Keras implementations of those models along with complete tutorials on how to use them effectively.
 
