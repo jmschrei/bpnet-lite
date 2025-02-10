@@ -90,8 +90,8 @@ The first step is loading data. Much like with the command-line tool, if you're 
 ```python
 import torch
 
-from bpnetlite.io import extract_loci
-from bpnetlite.io import LocusGenerator
+from tangermeme.io import extract_loci
+from bpnetlite.io import PeakGenerator
 from bpnetlite import BPNet
 
 peaks = 'test/CTCF.peaks.bed' # A set of loci to train on.
@@ -105,10 +105,10 @@ After specifying filepaths for each of these, you can create the data generator.
 ```python
 training_chroms = ['chr{}'.format(i) for i in range(1, 17)]
 
-training_data = LocusGenerator(peaks, seqs, signals, controls, chroms=training_chroms)
+training_data = PeakGenerator(peaks, seqs, signals, controls, chroms=training_chroms)
 ```
 
-The `LocusGenerator` function is a wrapper around several functions that extract data, pass them into a generator that applies shifts and shuffling, and pass that generator into a PyTorch data loader object for use during training. The end result is an object that can be directly iterated over while training a bpnet-lite model. 
+The `PeakGenerator` function is a wrapper around several functions that extract data, pass them into a generator that applies shifts and shuffling, and pass that generator into a PyTorch data loader object for use during training. The end result is an object that can be directly iterated over while training a bpnet-lite model. 
 
 Although wrapping all that functionality is good for the training set, the validation set should remain constant during training. Hence, one should only use the `extract_loci` function that is the first step when handling the training data.
 
