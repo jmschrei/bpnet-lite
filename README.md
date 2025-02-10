@@ -46,7 +46,7 @@ bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps nece
 bpnet negatives -i <peaks>.bed -f <fasta>.fa -b <bigwig>.bw -o matched_loci.bed -l 0.02 -w 2114 -v
 bpnet fit -p bpnet_fit_example.json
 bpnet predict -p bpnet_predict_example.json
-bpnet interpret -p bpnet_interpret_example.json
+bpnet attribute -p bpnet_attribute_example.json
 bpnet marginalize -p bpnet_marginalize_example.json
 ```
 
@@ -66,12 +66,12 @@ Generally, one can perform the same analyses using ChromBPNet as one can using B
 
 ###
 
-bpnet-lite comes with a second command-line tool, `chrombpnet`, that supports the steps necessary for training and using ChromBPNet models. These commands are used exactly the same way as the `bpnet` command-line tool with only minor changes to the parameters in the JSON. Note that the `predict`, `interpret` and `marginalize` commands will internally run their `bpnet` counterparts, but are still provided for convenience.
+bpnet-lite comes with a second command-line tool, `chrombpnet`, that supports the steps necessary for training and using ChromBPNet models. These commands are used exactly the same way as the `bpnet` command-line tool with only minor changes to the parameters in the JSON. Note that the `predict`, `attribute` and `marginalize` commands will internally run their `bpnet` counterparts, but are still provided for convenience.
 
 ```
 chrombpnet fit -p chrombpnet_fit_example.json
 chrombpnet predict -p chrombpnet_predict_example.json
-chrombpnet interpret -p chrombpnet_interpret_example.json
+chrombpnet attribute -p chrombpnet_attribute_example.json
 chrombpnet marginalize -p chrombpnet_marginalize_example.json
 ```
 
