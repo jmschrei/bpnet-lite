@@ -1,0 +1,33 @@
+{
+   "n_filters": 128,
+   "n_layers": 9,
+   "profile_output_bias": true,
+   "count_output_bias": true,
+   "name": "example",
+   "batch_size": 128,
+   "in_window": 400,
+   "out_window": 300,
+   "max_jitter": 0,
+   "reverse_complement": true,
+   "max_epochs": 50,
+   "validation_iter": 100,
+   "lr": 0.001,
+   "alpha": 1,
+   "verbose": true,
+
+   "min_counts": 0,
+   "max_counts": 99999999,
+
+   "training_chroms": ["chr2", "chr3", "chr4", "chr5", "chr6", "chr7", 
+      "chr9", "chr11", "chr12", "chr13", "chr14", "chr15", "chr16", "chr17", 
+      "chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
+   "validation_chroms": ["chr8", "chr10"],
+
+   "sequences":"/home/manglada/databases/data/GENCODE/GRCh38.p13.genome.fa",
+   "loci":"../../examples/ENCSR000AKO.bed",
+   "signals":[
+      "../../examples/ENCSR000AKO_plus.bigWig", 
+      "../../examples/ENCSR000AKO_minus.bigWig"
+   ],
+   "random_state": 0
+}

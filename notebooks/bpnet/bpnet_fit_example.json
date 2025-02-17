@@ -13,7 +13,7 @@
    "validation_iter": 100,
    "lr": 0.001,
    "alpha": 1,
-   "verbose": false,
+   "verbose": true,
 
    "min_counts": 0,
    "max_counts": 99999999,
@@ -23,15 +23,11 @@
       "chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
    "validation_chroms": ["chr8", "chr10"],
 
-   "sequences":"../../oak/common/hg38/hg38.fa",
-   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "sequences":"/home/manglada/databases/data/GENCODE/GRCh38.p13.genome.fa",
+   "loci":"../../examples/ENCSR000AKO.bed",
    "signals":[
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_minus.bigWig"
-   ],
-   "controls":[
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig"
+      "../../examples/ENCSR000AKO_plus.bigWig", 
+      "../../examples/ENCSR000AKO_minus.bigWig"
    ],
    "random_state": 0
 }

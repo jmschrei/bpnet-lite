@@ -449,6 +449,8 @@ elif args.cmd == 'predict':
 		in_signals=parameters['controls'],
 		loci=parameters['loci'],
 		chroms=parameters['chroms'],
+		in_window=parameters['in_window'],
+		out_window=parameters['out_window'],
 		max_jitter=0,
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
 		verbose=parameters['verbose']
