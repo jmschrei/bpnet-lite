@@ -154,7 +154,7 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 	ac_before, ac_after, ac_diff = [], [], []
 
 	for i, (name, pwm) in tqdm(enumerate(motifs), disable=not verbose):
-		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=1)])
+		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=0)])
 
 		(y_profile_before, y_counts_before), (y_profile_after, 
 			y_counts_after) = marginalize(model, X, motif, 
@@ -221,7 +221,7 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 	for i, idx in enumerate(idxs):
 		name, pwm = motifs[idx]
 		oname = output_dir + name
-		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=1)])
+		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=0)])
 
 		if not minimal:
 			_plot_profiles(p_before[idx], pb_lim, color='0.5', 

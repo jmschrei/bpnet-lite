@@ -19,6 +19,7 @@ setup(
         "tqdm >= 4.64.1",
         "seaborn >= 0.11.2",
         "modisco-lite >= 2.0.0",
-        "tangermeme >= 0.2.3"
+        "tangermeme >= 0.2.3",
+        "bam2bw"
     ],
 )

@@ -155,6 +155,10 @@ class ChromBPNet(torch.nn.Module):
 		batch_size: int
 			The number of examples to use in each batch. Default is 64.
 
+		dtype: str, optional
+			Whether to use mixed precision and, if so, what dtype to use. If not
+			using 'float32', recommended is to use 'bfloat16'. Default is 'float32'.
+
 		validation_iter: int
 			The number of training batches to perform before doing another
 			round of validation. Set higher to spend a higher percentage of
@@ -173,9 +177,10 @@ class ChromBPNet(torch.nn.Module):
 			Default is False
 		"""
 
-		X_valid = X_valid.cuda(non_blocking=True)
-		y_bias_profile, y_bias_counts =predict(self.bias, X_valid, 
-			batch_size=batch_size, device='cuda')
+		dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
+		
+		y_bias_profile, y_bias_counts = predict(self.bias, X_valid, 
+			batch_size=batch_size, dtype=dtype, device='cuda')
 
 		self.logger = Logger(["Epoch", "Iteration", "Training Time",
 			"Validation Time", "Training MNLL", "Training Count MSE", 

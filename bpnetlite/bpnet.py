@@ -313,7 +313,7 @@ class BPNet(torch.nn.Module):
 
 	def fit(self, training_data, optimizer, X_valid=None, X_ctl_valid=None, 
 		y_valid=None, max_epochs=100, batch_size=64, validation_iter=100, 
-		early_stopping=None, verbose=True):
+		dtype='float32', early_stopping=None, verbose=True):
 		"""Fit the model to data and validate it periodically.
 
 		This method controls the training of a BPNet model. It will fit the
@@ -354,16 +354,20 @@ class BPNet(torch.nn.Module):
 			The maximum number of epochs to train for, as measured by the
 			number of times that `training_data` is exhausted. Default is 100.
 
-		batch_size: int
+		batch_size: int, optional
 			The number of examples to include in each batch. Default is 64.
 
+		dtype: str, optional
+			Whether to use mixed precision and, if so, what dtype to use. If not
+			using 'float32', recommended is to use 'bfloat16'. Default is 'float32'.
+		
 		validation_iter: int
 			The number of batches to train on before validating against the
 			entire validation set. When the validation set is large, this
 			enables the total validating time to be small compared to the
 			training time by only validating periodically. Default is 100.
 
-		early_stopping: int or None
+		early_stopping: int or None, optional
 			Whether to stop training early. If None, continue training until
 			max_epochs is reached. If an integer, continue training until that
 			number of `validation_iter` ticks has been hit without improvement
@@ -375,12 +379,12 @@ class BPNet(torch.nn.Module):
 		"""
 
 		if X_valid is not None:
-			X_valid = X_valid.cuda()
 			y_valid_counts = y_valid.sum(dim=2)
 
 		if X_ctl_valid is not None:
-			X_ctl_valid = (X_ctl_valid.cuda(),)
-
+			X_ctl_valid = (X_ctl_valid,)
+			
+		dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
 
 		iteration = 0
 		early_stop_count = 0
@@ -393,10 +397,10 @@ class BPNet(torch.nn.Module):
 			for data in training_data:
 				if len(data) == 3:
 					X, X_ctl, y = data
-					X, X_ctl, y = X.cuda(), X_ctl.cuda(), y.cuda()
+					X, X_ctl, y = X.cuda().float(), X_ctl.cuda(), y.cuda()
 				else:
 					X, y = data
-					X, y = X.cuda(), y.cuda()
+					X, y = X.cuda().float(), y.cuda()
 					X_ctl = None
 
 				# Clear the optimizer and set the model to training mode
@@ -404,25 +408,27 @@ class BPNet(torch.nn.Module):
 				self.train()
 
 				# Run forward pass
-				y_profile, y_counts = self(X, X_ctl)
-				y_profile = y_profile.reshape(y_profile.shape[0], -1)
-				y_profile = torch.nn.functional.log_softmax(y_profile, dim=-1)
+				with torch.autocast(device_type='cuda', dtype=dtype):
+					y_profile, y_counts = self(X, X_ctl)
 				
-				y = y.reshape(y.shape[0], -1)
-				y_ = y.sum(dim=-1).reshape(-1, 1)
+					y_profile = y_profile.reshape(y_profile.shape[0], -1)
+					y_profile = torch.nn.functional.log_softmax(y_profile, dim=-1)
 
-				# Calculate the profile and count losses
-				profile_loss = MNLLLoss(y_profile, y).mean()
-				count_loss = log1pMSELoss(y_counts, y_).mean()
+					y = y.reshape(y.shape[0], -1)
+					y_ = y.sum(dim=-1).reshape(-1, 1)
 
-				# Extract the profile loss for logging
-				profile_loss_ = profile_loss.item()
-				count_loss_ = count_loss.item()
+					# Calculate the profile and count losses
+					profile_loss = MNLLLoss(y_profile, y).mean()
+					count_loss = log1pMSELoss(y_counts, y_).mean()
 
-				# Mix losses together and update the model
-				loss = profile_loss + self.alpha * count_loss
-				loss.backward()
-				optimizer.step()
+					# Extract the profile loss for logging
+					profile_loss_ = profile_loss.item()
+					count_loss_ = count_loss.item()
+
+					# Mix losses together and update the model
+					loss = profile_loss + self.alpha * count_loss
+					loss.backward()
+					optimizer.step()
 
 				# Report measures if desired
 				if verbose and iteration % validation_iter == 0:
@@ -434,7 +440,7 @@ class BPNet(torch.nn.Module):
 						tic = time.time()
 						y_profile, y_counts = predict(self, X_valid, 
 							args=X_ctl_valid, batch_size=batch_size, 
-							device='cuda')
+							dtype=dtype, device='cuda')
 
 						z = y_profile.shape
 						y_profile = y_profile.reshape(y_profile.shape[0], -1)

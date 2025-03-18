@@ -83,6 +83,7 @@ default_fit_parameters = {
 	'lr': 0.001,
 	'alpha': 10,
 	'beta': 0.5,
+	'early_stopping': None,
 	'verbose': False,
 	'bias_model': None,
 
@@ -177,6 +178,7 @@ default_pipeline_parameters = {
 	'model': None,
 	'bias_model': None,
 	'accessibility_model': None,
+	'early_stopping': None,
 	'verbose': False,
 
 	# Data parameters
@@ -304,7 +306,7 @@ def merge_parameters(parameters, default_parameters):
 	with open(parameters, "r") as infile:
 		parameters = json.load(infile)
 
-	optional = ['bias_model', 'min_counts', 'max_counts']
+	optional = ['bias_model', 'min_counts', 'max_counts', 'early_stopping']
 
 	for parameter, value in default_parameters.items():
 		if parameter not in parameters:
@@ -405,7 +407,7 @@ if args.cmd == "fit":
 		verbose=parameters['verbose']
 	)
 
-	bias = torch.load(parameters['bias_model'], map_location='cpu').cuda().eval()
+	bias = torch.load(parameters['bias_model'], weights_only=False, map_location='cpu').cuda().eval()
 	accessibility = BPNet(n_filters=parameters['n_filters'], 
 		n_layers=parameters['n_layers'], n_control_tracks=0, n_outputs=1,
 		alpha=parameters['alpha'],

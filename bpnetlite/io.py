@@ -68,7 +68,7 @@ class DataGenerator(torch.utils.data.Dataset):
 
 		self.signals = signals
 		self.controls = controls
-		self.sequences = sequences	
+		self.sequences = sequences
 
 	def __len__(self):
 		return len(self.sequences)
@@ -94,7 +94,7 @@ class DataGenerator(torch.utils.data.Dataset):
 		if self.controls is not None:
 			return X, X_ctl, y
 
-		return X, y		
+		return X, y	
 
 
 def PeakGenerator(loci, sequences, signals, controls=None, chroms=None, 
@@ -196,7 +196,7 @@ def PeakGenerator(loci, sequences, signals, controls=None, chroms=None,
 		sequences, signals_ = X
 		controls_ = None
 
-	sequences = sequences.float()
+	#sequences = sequences.float()
 
 	X_gen = DataGenerator(sequences, signals_, controls=controls_, 
 		in_window=in_window, out_window=out_window, max_jitter=max_jitter,
