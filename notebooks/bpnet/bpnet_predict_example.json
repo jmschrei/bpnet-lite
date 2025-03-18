@@ -1,0 +1,12 @@
+{
+   "batch_size":64,
+   "in_window":2114,
+   "out_window":1000,
+   "verbose":true,
+   "chroms":["chr8", "chr10"],
+   "model":"example.final.torch",
+   "sequences":"/home/manglada/databases/data/GENCODE/GRCh38.p13.genome.fa",
+   "loci":"../../examples/ENCSR000AKO.bed",
+   "profile_filename": "y_profile.npz",
+   "counts_filename": "y_counts.npz"
+}
