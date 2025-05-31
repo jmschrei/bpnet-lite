@@ -7,30 +7,32 @@
 
 bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [paper | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. Additionally, it contains efficient data loaders and common operations one would do with these trained models including calculating attributions, running TF-MoDISco, and performing marginalization experiments. These operations are wrapped in command-line tools for ease-of-use and organized in a pipeline command representing the standard workflow. This package is meant to be used for quickly exploring data sets using BPNet or ChromBPNet and as a springboard for prototyping new ideas that involve modifying the code. 
 
-### Installation
+#### Installation
 
 You can install bpnet-lite with `pip install bpnet-lite`.
 
-### Data Processing
+#### Data Preprocessing
 
-BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integer counts with one count per read in the file. Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you should then use the following command line arguments to get bigwigs of integer counts.
+> **Note**
+> As of v0.9.0 you can now include .BAM and .tsv files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data.
+
+BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integer counts with one count per read in the file. Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you should use [bam2bw](https://github.com/jmschrei/bam2bw) to convert your BAM or fragment tsv file to bigWig files.
 
 If you are using stranded data, e.g., ChIP-seq:
 
 ```
-bedtools genomecov -5 -bg -strand + -g <your genome>.chrom.sizes -ibam <your bam>.bam | sort -k1,1 -k2,2n > pos_strand.bedGraph
-./bedGraphToBigWig pos_strand.bedGraph <your genome>.chrom.sizes pos_strand.bw
-
-bedtools genomecov -5 -bg -strand - -g <your genome>.chrom.sizes -ibam <your bam>.bam | sort -k1,1 -k2,2n > neg_strand.bedGraph
-./bedGraphToBigWig neg_strand.bedGraph <your genome>.chrom.sizes neg_strand.bw
+bam2bw <bam1>.bam <bam2>.bam ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> -v 
 ```
 
-If you are using unstranded data, e.g., DNase- or ATAC-seq.
+This command will create two bigWig files, one for the + strand and one for the - strand, using the name provided as the suffix.
+
+If you are using unstranded data, e.g., ATAC-seq:
 
 ```
-bedtools genomecov -5 -bg -g <your genome>.chrom.sizes -ibam <your bam>.bam | sort -k1,1 -k2,2n > data.bedGraph
-./bedGraphToBigWig data.bedGraph <your genome>.chrom.sizes data.bw
+bam2bw <bam1>.bam <bam2>.bam ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> -v -u
 ```
+
+These tools require positive loci (usually peaks for the respective activity) and negative loci (usually GC-matched background sequences) for training. The positive loci must be provided from the user, potentially by applying a tool like MACS2 to your .BAM files. The negative loci can be calculated using a command-line tool in this package, described later, or by specifying in the JSON that `find_negatives: true`. 
 
 ## BPNet
 
@@ -50,11 +52,13 @@ bpnet attribute -p bpnet_attribute_example.json
 bpnet marginalize -p bpnet_marginalize_example.json
 ```
 
-Alternatively, one can run the entire pipeline of commands specified above (except for the calculation of negatives) in addition to also running TF-MoDISco and generating a report on the found motifs.
+Alternatively, one can use the `pipeline` command, whose purpose is to go all the way from the .BAM and .bed files to all the results of using BPNet without needing any hand-holding. This command handles the mapping of .BAM and .tsv files to bigWigs, the identification of GC-matched negatives, the training of the model, making predictions, calculating attributions, running [TF-MoDISco](https://github.com/jmschrei/tfmodisco-lite) and generating a report on the found motifs, and performing marginalizations. For each step (except the TF-MoDISco one), a JSON is generated to serve as a record for what the precise input to each step was, and to allow easy editing in case something has gone slightly wrong.
 
 ```
 bpnet pipeline -p bpnet_pipeline_example.json
 ```
+
+For a complete description of the pipeline JSON, see the `example_jsons` folded. However, it is extremely flexible. For example, a different set of sequences or loci can be used in each step, allowing one to train a model genome-wide and then apply it to a set of synthetic constructs in a separate FASTA. Alternatively, one can train the model using one reference genome and apply it to another reference genome.
 
 ## ChromBPNet
 
