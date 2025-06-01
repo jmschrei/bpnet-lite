@@ -32,6 +32,12 @@ If you are using unstranded data, e.g., ATAC-seq:
 bam2bw <bam1>.bam <bam2>.bam ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> -v -u
 ```
 
+If you have a file of fragments, usually formatted as a .tsv or .tsv.gz and coming from ATAC-seq or scATAC-seq data, you can use the `-f` flag to map both the start and end (end-1, specifically) instead of just the 5' end.
+
+```
+bam2bw <frag1>.tsv.gz <frag2>.tsv.gz  ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> -v -u -f
+```
+
 These tools require positive loci (usually peaks for the respective activity) and negative loci (usually GC-matched background sequences) for training. The positive loci must be provided from the user, potentially by applying a tool like MACS2 to your .BAM files. The negative loci can be calculated using a command-line tool in this package, described later, or by specifying in the JSON that `find_negatives: true`. 
 
 ## BPNet
@@ -59,6 +65,14 @@ bpnet pipeline -p bpnet_pipeline_example.json
 ```
 
 For a complete description of the pipeline JSON, see the `example_jsons` folded. However, it is extremely flexible. For example, a different set of sequences or loci can be used in each step, allowing one to train a model genome-wide and then apply it to a set of synthetic constructs in a separate FASTA. Alternatively, one can train the model using one reference genome and apply it to another reference genome.
+
+If you want to run the entire pipeline but find these JSONs daunting you can use the following command that takes the filepaths to the input data and fills in the default pipeline JSON for you. 
+
+```
+bpnet pipeline-json -i <.sam, .bam, .tsv, .tsv.gz, or .bw> -c <optional, but same as -i> -s <sequence fasta file> -l <positive loci BED file> -n <name to use for intermediary files> -o <name of JSON to produce> -m <motif file in MEME format>
+```
+
+This command can optionally take in `-f` if the data are fragments and `-u` if the data are unstranded, and `-i` and `-c` can be repeated. None of the above fields are required if your situation requires something more complicated, but if all fields are provided the `bpnet pipeline` command can be run directly on the JSON without modification. You should check the JSON to make sure that everything is correct, though, e.g., the right number of filters and layers in the model.
 
 ## ChromBPNet
 
