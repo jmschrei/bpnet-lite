@@ -14,9 +14,9 @@ bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/art
 #### Data Preprocessing
 
 > **Note**
-> As of v0.9.0 you can now include .BAM and .tsv files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data.
+> As of v0.9.0 you can now include .BAM and .tsv files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed using bam2bw. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data.
 
-BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integer counts with one count per read in the file. Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you should use [bam2bw](https://github.com/jmschrei/bam2bw) to convert your BAM or fragment tsv file to bigWig files.
+BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integer counts with one count per read in the file (or two counts per fragment). Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you should use [bam2bw](https://github.com/jmschrei/bam2bw) to convert your BAM or fragment tsv file to bigWig files.
 
 If you are using stranded data, e.g., ChIP-seq:
 
