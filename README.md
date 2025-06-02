@@ -9,7 +9,7 @@ bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/art
 
 #### Installation
 
-You can install bpnet-lite with `pip install bpnet-lite`.
+`pip install bpnet-lite`.
 
 #### Data Preprocessing
 
