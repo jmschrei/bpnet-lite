@@ -11,22 +11,25 @@
 	"batch_size": 64,
 	"max_jitter": 128,
 	"reverse_complement": true,
-	"max_epochs": 5,
+	"max_epochs": 20,
 	"validation_iter": 100,
 	"lr": 0.001,
-	"alpha": 1,
+	"alpha": 100,
 	"verbose": true,
 	"min_counts": 0,
 	"max_counts": 99999999,
 	"sequences": "../../../oak/common/hg38/hg38.fa",
 	"loci": null,
+	'find_negatives': false,
+	'unstranded': false,
+	'fragments': false,
 	"signals": [
-       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_plus.bigWig", 
-       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_minus.bigWig"
+       "ENCSR000BGQ_plus.bigWig", 
+       "ENCSR000BGQ_minus.bigWig"
     ],
 	"controls":[
-       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_control_plus.bigWig", 
-       "../../../tfatlas/processed_data/ENCSR000BGQ/ENCSR000BGQ_control_minus.bigWig"
+       "ENCSR000BGQ_control_plus.bigWig", 
+       "ENCSR000BGQ_control_minus.bigWig"
     ],
 	"fit_parameters": {
 		"batch_size": 64,
@@ -36,8 +39,8 @@
 		"validation_chroms": ["chr8", "chr10"],
 		"sequences": null,
 		"loci": [
-			"../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
-			"../../../tfatlas/processed_data/ENCSR000BGQ/gc_neg_only.bed.gz"
+			"peaks.bed.gz",
+			"gc_neg_only.bed.gz"
 		],
 		"signals": null,
 		"controls": null,	
@@ -50,7 +53,7 @@
 		"profile_filename": null,
 		"counts_filename": null,
 		"sequences": null,
-		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
+		"loci": "peaks.bed.gz",
 		"signals": null,
 		"controls": null,
 		"verbose": null
@@ -59,7 +62,7 @@
 		"batch_size": 1,
 		"output": "profile",
 		"chroms": ["chr8"],
-		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/peaks.bed.gz",
+		"loci": "peaks.bed.gz",
 		"ohe_filename": null,
 		"attr_filename": null,
 		"n_shuffles": 20,
@@ -78,12 +81,12 @@
 		"verbose": null
 	},
 	"marginalize_parameters": {
-		"loci": "../../../tfatlas/processed_data/ENCSR000BGQ/gc_neg_only.bed.gz",
+		"loci": "gc_neg_only.bed.gz",
 		"n_loci": 100,
 		"shuffle": false,
 		"random_state": null,
 		"output_folder": null,
-		"motifs": "ctcf.gata2.sp1.meme",
+		"motifs": "motifs.meme",
 		"minimal": true,
 		"verbose": null
 	} 

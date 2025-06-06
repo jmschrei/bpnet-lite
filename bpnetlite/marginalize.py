@@ -75,7 +75,7 @@ def _plot_attributions(y, ylim, path, figsize=(10,3), **kwargs):
 
 
 def marginalization_report(model, motifs, X, output_dir, batch_size=64,  
-	attributions=True, minimal=False, verbose=False):
+	attributions=True, minimal=False, device='cuda', verbose=False):
 	"""Create an HTML report showing the impact of each motif.
 
 	Take in a predictive model, a MEME file of motifs, and a set of sequences,
@@ -113,6 +113,10 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 		outputs, or the full report, which shows the results before and after
 		insertion as well as the differences. Potentially useful for debugging.
 		Default is False.
+	
+	device: str, optional
+		The device to run operations on. Usually is either 'cuda' or 'cpu'.
+		Default is 'cuda'.
 
 	verbose: bool, optional
 		Whether to print a progress bar as motifs are marginalized over. Default
@@ -158,7 +162,7 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 
 		(y_profile_before, y_counts_before), (y_profile_after, 
 			y_counts_after) = marginalize(model, X, motif, 
-			batch_size=batch_size)
+			batch_size=batch_size, device=device)
 
 		y_profile_before = torch.nn.functional.softmax(y_profile_before, dim=-1)
 		y_profile_after = torch.nn.functional.softmax(y_profile_after, dim=-1)
@@ -179,7 +183,7 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 					_Log: _nonlinear,
 					_Exp: _nonlinear
 				}, 
-				n_shuffles=1, batch_size=batch_size)
+				n_shuffles=1, batch_size=batch_size, device=device)
 
 			Xc_attr_before, Xc_attr_after = marginalize(
 				CountWrapper(model).double(), X.double(), motif, 
@@ -189,7 +193,8 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 					_Log: _nonlinear,
 					_Exp: _nonlinear
 				}, 
-				batch_size=batch_size)
+				batch_size=batch_size,
+				device=device)
 
 			ap_before.append(Xp_attr_before.mean(axis=0)[:, s:e].T)
 			ap_after.append(Xp_attr_after.mean(axis=0)[:, s:e].T)
@@ -220,6 +225,7 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 	idxs = (c_after - c_before).mean(axis=1)[:, 0].argsort()[::-1]
 	for i, idx in enumerate(idxs):
 		name, pwm = motifs[idx]
+		name = name.replace(" ", "_").replace("/", "-")
 		oname = output_dir + name
 		motif = ''.join(numpy.array(['A', 'C', 'G', 'T'])[pwm.argmax(axis=0)])
 
@@ -249,32 +255,39 @@ def marginalization_report(model, motifs, X, output_dir, batch_size=64,
 
 		results['name'].append(name)
 		results['sequence'].append(motif_)
-		results[p + ' (before)'].append(oname + pb + ".png")
-		results[p + ' (after)'].append(oname + pa + ".png")
-		results[p + ' (diff)'].append(oname + pd + ".png")
-		results[c].append(oname + ".counts.png")
+		results[p + ' (before)'].append(name + pb + ".png")
+		results[p + ' (after)'].append(name + pa + ".png")
+		results[p + ' (diff)'].append(name + pd + ".png")
+		results[c].append(name + ".counts.png")
 
 		if attributions:
-			results[p + a + ' (before)'].append(oname + pab + ".png")
-			results[p + a + ' (after)'].append(oname + paa + ".png")
-			results[p + a + ' (diff)'].append(oname + pad + ".png")
-			results[c + a + ' (before)'].append(oname + cab + ".png")
-			results[c + a + ' (after)'].append(oname + caa + ".png")
-			results[c + a + ' (diff)'].append(oname + cad + ".png")
+			results[p + a + ' (before)'].append(name + pab + ".png")
+			results[p + a + ' (after)'].append(name + paa + ".png")
+			results[p + a + ' (diff)'].append(name + pad + ".png")
+			results[c + a + ' (before)'].append(name + cab + ".png")
+			results[c + a + ' (after)'].append(name + caa + ".png")
+			results[c + a + ' (diff)'].append(name + cad + ".png")
 
 	if not attributions:
-		for key in results.keys():
-			if 'attributions' in key:
-				del results[key]
+		del results[p + a + ' (before)']
+		del results[p + a + ' (after)']
+		del results[p + a + ' (diff)']
+		del results[c + a + ' (before)']
+		del results[c + a + ' (after)']
+		del results[c + a + ' (diff)']
 
 	formatters = {name: path_to_image_html for name in results.keys() 
 		if name not in ('name', 'sequence')}
 
 	results_df = pandas.DataFrame(results)
 	if minimal:
-		results_df = results_df[['name', 'sequence', 'profile (diff)', 
-			'counts', 'profile attributions (diff)', 
-			'counts attributions (diff)']]
-
+		if attributions:
+			results_df = results_df[['name', 'sequence', 'profile (diff)', 
+				'counts', 'profile attributions (diff)', 
+				'counts attributions (diff)']]
+		else:
+			results_df = results_df[['name', 'sequence', 'profile (diff)', 
+				'counts']]
+			
 	results_df.to_html(open('{}/marginalization.html'.format(output_dir), 'w'),
 		escape=False, formatters=formatters, index=False)

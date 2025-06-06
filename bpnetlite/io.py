@@ -38,6 +38,10 @@ class DataGenerator(torch.utils.data.Dataset):
 		The control signal to take as input, usually counts, for `n`
 		examples with `t` strands and output length `out_window`. If
 		None, does not return controls.
+	
+	p: torch.tensor or None, shape=(n,) 
+		A vector of probabilities that sum to 1 containing the sampling probability
+		of each sequence. If None, use a uniform distribution.
 
 	in_window: int, optional
 		The input window size. Default is 2114.
@@ -56,9 +60,10 @@ class DataGenerator(torch.utils.data.Dataset):
 		Whether to use a deterministic seed or not.
 	"""
 
-	def __init__(self, sequences, signals, controls=None, in_window=2114, 
+	def __init__(self, sequences, signals, controls=None, p=None, in_window=2114, 
 		out_window=1000, max_jitter=0, reverse_complement=False, 
 		random_state=None):
+		self.p = p
 		self.in_window = in_window
 		self.out_window = out_window
 		self.max_jitter = max_jitter
@@ -74,7 +79,7 @@ class DataGenerator(torch.utils.data.Dataset):
 		return len(self.sequences)
 
 	def __getitem__(self, idx):
-		i = self.random_state.choice(len(self.sequences))
+		i = self.random_state.choice(len(self.sequences), p=self.p)
 		j = 0 if self.max_jitter == 0 else self.random_state.randint(
 			self.max_jitter*2) 
 
@@ -97,10 +102,10 @@ class DataGenerator(torch.utils.data.Dataset):
 		return X, y	
 
 
-def PeakGenerator(loci, sequences, signals, controls=None, chroms=None, 
-	in_window=2114, out_window=1000, max_jitter=128, reverse_complement=True, 
-	min_counts=None, max_counts=None, random_state=None, pin_memory=True, 
-	num_workers=0, batch_size=32, verbose=False):
+def PeakGenerator(loci, sequences, signals, controls=None, loci_weights=None,
+	chroms=None, in_window=2114, out_window=1000, max_jitter=128, 
+	reverse_complement=True, min_counts=None, max_counts=None, random_state=None, 
+	pin_memory=True, num_workers=0, batch_size=32, verbose=False):
 	"""This is a constructor function that handles all IO.
 
 	This function will extract signal from all signal and control files,
@@ -195,8 +200,6 @@ def PeakGenerator(loci, sequences, signals, controls=None, chroms=None,
 	else:
 		sequences, signals_ = X
 		controls_ = None
-
-	#sequences = sequences.float()
 
 	X_gen = DataGenerator(sequences, signals_, controls=controls_, 
 		in_window=in_window, out_window=out_window, max_jitter=max_jitter,

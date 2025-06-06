@@ -313,7 +313,7 @@ class BPNet(torch.nn.Module):
 
 	def fit(self, training_data, optimizer, X_valid=None, X_ctl_valid=None, 
 		y_valid=None, max_epochs=100, batch_size=64, validation_iter=100, 
-		dtype='float32', early_stopping=None, verbose=True):
+		dtype='float32', device='cuda', early_stopping=None, verbose=True):
 		"""Fit the model to data and validate it periodically.
 
 		This method controls the training of a BPNet model. It will fit the
@@ -356,16 +356,20 @@ class BPNet(torch.nn.Module):
 
 		batch_size: int, optional
 			The number of examples to include in each batch. Default is 64.
-
-		dtype: str, optional
-			Whether to use mixed precision and, if so, what dtype to use. If not
-			using 'float32', recommended is to use 'bfloat16'. Default is 'float32'.
 		
 		validation_iter: int
 			The number of batches to train on before validating against the
 			entire validation set. When the validation set is large, this
 			enables the total validating time to be small compared to the
 			training time by only validating periodically. Default is 100.
+		
+		dtype: str or torch.dtype
+			The torch.dtype to use when training. Usually, this will be torch.float32
+			or torch.bfloat16. Default is torch.float32.
+		
+		device: str
+			The device to use for training and inference. Typically, this will be
+			'cuda' but can be anything supported by torch. Default is 'cuda'.
 
 		early_stopping: int or None, optional
 			Whether to stop training early. If None, continue training until
@@ -397,18 +401,20 @@ class BPNet(torch.nn.Module):
 			for data in training_data:
 				if len(data) == 3:
 					X, X_ctl, y = data
-					X, X_ctl, y = X.cuda().float(), X_ctl.cuda(), y.cuda()
+					X_ctl = X_ctl.to(device)
 				else:
 					X, y = data
-					X, y = X.cuda().float(), y.cuda()
 					X_ctl = None
+					
+				X = X.to(device).float()
+				y = y.to(device)
 
 				# Clear the optimizer and set the model to training mode
 				optimizer.zero_grad()
 				self.train()
 
 				# Run forward pass
-				with torch.autocast(device_type='cuda', dtype=dtype):
+				with torch.autocast(device_type=device, dtype=dtype):
 					y_profile, y_counts = self(X, X_ctl)
 				
 					y_profile = y_profile.reshape(y_profile.shape[0], -1)
@@ -440,7 +446,7 @@ class BPNet(torch.nn.Module):
 						tic = time.time()
 						y_profile, y_counts = predict(self, X_valid, 
 							args=X_ctl_valid, batch_size=batch_size, 
-							dtype=dtype, device='cuda')
+							dtype=dtype, device=device)
 
 						z = y_profile.shape
 						y_profile = y_profile.reshape(y_profile.shape[0], -1)

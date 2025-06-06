@@ -3,6 +3,31 @@ Release History
 ===============
 
 
+Version 0.9.0
+=============
+
+Highlights
+----------
+
+	- Added support for specifying what device to use within the JSONs
+	- Added support for specifying what dtype to use within the JSONs
+
+pipeline-json
+-------------
+
+	- Added a new command-line function "pipeline-json"
+	- This function takes in filepaths to input data and generates a pipeline JSON
+	that can be modified or immediately run.
+
+pipeline
+--------
+
+	- Added support for processing .BAM/.SAM/.tsv/.tsv.gz files into stranded or
+	unstranded bigWigs before training the BPNet model using bam2bw
+	- Added support for calculating GC-matched negatives regions from the provided
+	peak file and FASTA file.
+
+
 Version 0.8.1
 ==============
 

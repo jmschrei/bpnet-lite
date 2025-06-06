@@ -5,12 +5,11 @@
    "verbose": true,
    "chroms": ["chr8", "chr10"],
 
-   "sequences":"../../oak/common/hg38/hg38.fa",
-   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "sequences":"hg38.fa",
+   "loci":"peaks.bed.gz",
    "model":"bpnet.64.8.torch",
    "output":"count",
 
-   "output": "profile",
    "ohe_filename": "ohe.npz",
    "attr_filename": "attr.npz",
    "n_shuffles":20,

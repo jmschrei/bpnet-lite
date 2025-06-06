@@ -118,8 +118,8 @@ class ChromBPNet(torch.nn.Module):
 
 
 	def fit(self, training_data, optimizer, X_valid=None, y_valid=None,
-		max_epochs=100, batch_size=64, validation_iter=100, early_stopping=None, 
-		verbose=True):
+		max_epochs=100, batch_size=64, validation_iter=100, dtype='float32',
+		device='cuda', early_stopping=None, verbose=True):
 		"""Fit the ChromBPNet model to data.
 
 		Specifically, this function will fit the accessibility model to
@@ -155,14 +155,18 @@ class ChromBPNet(torch.nn.Module):
 		batch_size: int
 			The number of examples to use in each batch. Default is 64.
 
-		dtype: str, optional
-			Whether to use mixed precision and, if so, what dtype to use. If not
-			using 'float32', recommended is to use 'bfloat16'. Default is 'float32'.
-
 		validation_iter: int
 			The number of training batches to perform before doing another
 			round of validation. Set higher to spend a higher percentage of
 			time in the training step.
+
+		dtype: str or torch.dtype
+			The torch.dtype to use when training. Usually, this will be torch.float32
+			or torch.bfloat16. Default is torch.float32.
+		
+		device: str
+			The device to use for training and inference. Typically, this will be
+			'cuda' but can be anything supported by torch. Default is 'cuda'.
 
 		early_stopping: int or None
 			Whether to stop training early. If None, continue training until
@@ -202,25 +206,26 @@ class ChromBPNet(torch.nn.Module):
 
 				optimizer.zero_grad()
 
-				acc_profile, acc_counts = self.accessibility(X)
-				bias_profile, bias_counts = self.bias(X)
+				with torch.autocast(device_type=device, dtype=dtype):
+					acc_profile, acc_counts = self.accessibility(X)
+					bias_profile, bias_counts = self.bias(X)
 
-				y_profile = torch.nn.functional.log_softmax(acc_profile +
-					bias_profile, dim=-1)
+					y_profile = torch.nn.functional.log_softmax(acc_profile +
+						bias_profile, dim=-1)
 
-				y_counts = torch.logsumexp(torch.stack([acc_counts, 
-					bias_counts]), dim=0)
+					y_counts = torch.logsumexp(torch.stack([acc_counts, 
+						bias_counts]), dim=0)
 
-				profile_loss = MNLLLoss(y_profile, y).mean()
-				count_loss = log1pMSELoss(y_counts, y.sum(dim=-1).reshape(-1, 
-					1)).mean()
+					profile_loss = MNLLLoss(y_profile, y).mean()
+					count_loss = log1pMSELoss(y_counts, y.sum(dim=-1).reshape(-1, 
+						1)).mean()
 
-				profile_loss_ = profile_loss.item()
-				count_loss_ = count_loss.item()
+					profile_loss_ = profile_loss.item()
+					count_loss_ = count_loss.item()
 
-				loss = profile_loss + self.accessibility.alpha * count_loss
-				loss.backward()
-				optimizer.step()
+					loss = profile_loss + self.accessibility.alpha * count_loss
+					loss.backward()
+					optimizer.step()
 
 				if verbose and iteration % validation_iter == 0:
 					train_time = time.time() - start
@@ -230,7 +235,8 @@ class ChromBPNet(torch.nn.Module):
 						self.accessibility.eval()
 
 						y_profile, y_counts = predict(self.accessibility, 
-							X_valid, batch_size=batch_size, device='cuda')
+							X_valid, batch_size=batch_size, device=device,
+							dtype=dtype)
 
 						y_profile = torch.nn.functional.log_softmax(
 							y_profile + y_bias_profile, dim=-1)

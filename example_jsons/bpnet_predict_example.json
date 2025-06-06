@@ -3,14 +3,16 @@
    "in_window":2114,
    "out_window":1000,
    "verbose":true,
+   "device":'cuda',
+   "dtype":"float32",
    "chroms":["chr8", "chr10"],
    "model":"bpnet.64.8.torch",
 
-   "sequences":"../../oak/common/hg38/hg38.fa",
-   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "sequences":"hg38.fa",
+   "loci":"peaks.bed.gz",
    "controls": [
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig"
+      "ENCSR000BGW_control_plus.bigWig", 
+      "ENCSR000BGW_control_minus.bigWig"
    ],
 
    "profile_filename": "y_profile.npz",

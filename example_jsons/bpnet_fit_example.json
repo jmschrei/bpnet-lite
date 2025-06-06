@@ -12,7 +12,9 @@
    "max_epochs": 50,
    "validation_iter": 100,
    "lr": 0.001,
-   "alpha": 1,
+   "alpha": 100,
+   "dtype": 'float32',
+   "device": 'cuda',
    "verbose": false,
 
    "min_counts": 0,
