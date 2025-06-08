@@ -1,8 +1,149 @@
-# Example JSON Parameters
+## Example JSON Parameters
 
-BPNet and ChromBPNet have many parameters for defining the architecture, learning process, and data. Rather than passing all of these parameters in through the command-line one should pass them in through a JSON. An additional benefit of this format is that, after running the command one has a complete log of the parameters used to generate the results.
+Each of the steps for training and using BPNet and ChromBPNet models have many parameters. Most of the default parameters work well broadly but you may want to tweak them, or be operating in a special circumstance where changes to the defaults need to be made. Because there are so many parameters, it made sense to have these commands take in a JSON instead of forcing the user to specify many arguments for each step. In my experience, having a written record of what each command was is also immensely valuable when going back and documenting each of the steps or for debugging.
 
-Default parameters are specified in the command-line tools themselves. When a value is not provided in the parameter JSON the subcommand will fall back on those default values. Potentially, this can significantly reduce the size of the JSONs you need to specify.
+Below, you will find a copy of the example JSON for each command along with an explanation of what the parameter means. An important note is that you do not need to actually specify every parameter in each JSON: just the ones that are different than the defaults. The respective commands (`bpnet` and `chrombpnet`) store the default parameters for each command, so please check those if you are experiencing unexpected behavior when not specifying every command. 
+
+> **Warning**: 
+> Many of the JSONs in the repo above have spaces to make them visually more digestable. Your JSON parser may not like these spaces so, once you understand the parameters, please remove the spaces. 
+
+### BPNet Pipeline Parameters
+
+Likely, the most used command is `bpnet pipeline` which handles everything from processing the data to training the BPNet model and making predictions, attributions, identifying and annotating seqlets, running TF-MoDISco, and performing in silico marginalizations. Even if you do not need each step, it can be faster to simply run this because each step will have data filepaths programatically filled in from the previous step so you do not need to think too much.
+
+This JSON in its entirety can be quite intimidating. Scroll past it for a minimal version that relies heavily on the defaults and for a command line tool that will automatically generate it given the data filenames.
+
+```
+{
+	"n_filters": 64,               # Number of filters in the convolutions
+	"n_layers": 8,                 # Number of dilated residual convolutions between the initial, and final, layers.
+	"profile_output_bias": true,   # Whether to include a bias term in the profile head
+	"count_output_bias": true,     # Whether to include a bias term in the count head
+	"in_window": 2114,             # Length of the input window
+	"out_window": 1000,            # Length of the output window
+	"name": "test",                # Name of the model, primarily used to auto-generate output file names
+	"model": null,                 # Name of the model to use for the remaining steps instead of fitting a new one
+	                               # If null, train a new model
+	"batch_size": 64,              # Batch size to use for training and validation
+	"max_jitter": 128,             # Maximum amount of jitter when generating training examples
+	"reverse_complement": true,    # Whether to randomly RC half of the training examples
+	"max_epochs": 20,              # The maximum number of epochs to train for
+	"validation_iter": 100,        # The number of batches to train on before calculating validation set performance
+	"lr": 0.001,                   # Learning rate of the AdamW optimizer
+	"alpha": 100,                  # Weight of the count-loss in the total loss.
+	"device": "cuda",              # The device to use, usually `cuda` or `cpu`
+	"dtype", "float32",            # The dtype to use, usually `float32` or `bfloat16`
+	"verbose": true,               # Whether to print out a log to the terminal during training
+	
+	"min_counts": 0,               # Ensure that each training example has at least this number of counts
+	"max_counts": 99999999,        # Ensure that each training example has no more than this number of counts
+	"sequences": "hg38.fa",        # FASTA file of the genome to train on
+	"loci": ['peaks.bed.gz'],      # Loci to use in other steps (must be a list)
+	'find_negatives': true,        # Whether to find GC-matched negatives for the loci (will set the `negatives` field
+	'unstranded': false,           # If processing BAMs/SAMs/tsv/tsv.gzs into bigWigs, if the signal is unstranded
+	'fragments': false,            # If processing BAMs/SAMs/tsv/tsv.gzs into bigWigs, if the lines are fragments
+	
+	"signals": [                   # A list containing the BAM/SAM/tsv/tsv.gz or bigWig files with the signal
+       "input1.bam", 
+       "input2.bam"
+    ],
+	"controls":[                   # A list containing the BAM/SAM/tsv/tsv.gz or bigWig files with the controls
+       "control1.bam",                 # Optional, should be `null` if not used.
+       "control2.bam"
+    ],
+	
+	"fit_parameters": {            # The parameters to use for the fit step. If `null`, will inherit from the upper level and then defaults.
+		"batch_size": 64,
+		"training_chroms": ["chr2", "chr3", "chr4", "chr5", "chr6", "chr7", 
+			"chr9", "chr11", "chr12", "chr13", "chr14", "chr15", "chr16", 
+			"chr17", "chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
+		"validation_chroms": ["chr8", "chr10"],
+		"sequences": null,
+		"loci": null,
+		"signals": null,
+		"controls": null,
+		"verbose": null,
+		"random_state": null
+	},
+	
+	"predict_parameters": {        # The parameters to use for the predict step. If `null`, will inherit from the upper level and then defaults.
+		"batch_size": 64,
+		"chroms": ["chr8", "chr10"],
+		"profile_filename": null,
+		"counts_filename": null,
+		"sequences": null,
+		"loci": "peaks.bed.gz",
+		"signals": null,
+		"controls": null,
+		"verbose": null
+	},
+	
+	"attribute_parameters": {      # The parameters to use for the attribute step. If `null`, will inherit from the upper level and then defaults.
+		"batch_size": 1,
+		"output": "counts",
+		"chroms": ["chr8"],
+		"loci": "peaks.bed.gz",
+		"ohe_filename": null,
+		"attr_filename": null,
+		"n_shuffles": 20,
+		"random_state": null,
+		"verbose": null
+	},
+	
+	"seqlet_parameters": {         # The parameters to use for the seqlet step. If `null`, will inherit from the upper level and then defaults.
+		"threshold": 0.01,
+		"min_seqlet_len": 4,
+		"max_seqlet_len": 25,
+		"additional_flanks": 3,
+		"in_window": null,
+		"chroms": null,
+		"verbose": null,
+		"loci": null,
+		"ohe_filename": null,
+		"attr_filename": null,
+		"idx_filename": null,
+		"output_filename": null
+	},
+
+	"annotation_parameters": {      # The parameters to use for the seqlet annotation step. These are fed into `ttl`.
+	        "motifs": null,
+	        "sequences": null,
+	        "seqlet_filename": null,
+	        "n_score_bins": 100,
+	        "n_median_bins": 1000,
+	        "n_target_bins": 100,
+	        "n_cache": 250,
+	        "reverse_complement": true,
+	        "n_jobs": -1,
+	        "output_filename": null
+	}
+
+	"modisco_motifs_parameters": {  # The parameters to use for running TF-MoDISco step. If `null`, will inherit from the upper level and then defaults.
+		"n_seqlets": 100000,
+		"output_filename": null,
+		"verbose": null
+	},
+	
+	"modisco_report_parameters": {  # The parameters to use for generating the TF-MoDISco report. If `null`, will inherit from the upper level and then defaults.
+		"motifs": "motifs.meme",
+		"output_folder": null,
+		"verbose": null
+	},
+	
+	"marginalize_parameters": {     # The parameters to use for the marginalization step. If `null`, will inherit from the upper level and then defaults.
+		"loci": null,
+		"n_loci": 100,
+		"shuffle": false,
+		"random_state": null,
+		"output_folder": null,
+		"motifs": "motifs.meme",
+		"minimal": true,
+		"verbose": null
+	} 
+}
+```
+
+
 
 ### BPNet Fit Parameters
 
