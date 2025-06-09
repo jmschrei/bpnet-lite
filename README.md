@@ -14,9 +14,9 @@ bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/art
 #### Data Preprocessing
 
 > **Note**
-> As of v0.9.0 you can now include .BAM and .tsv files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed using bam2bw. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data.
+> As of v0.9.0 you can now include BAM/SAM and .tsv/.tsv.gz files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed using bam2bw. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data anymore.
 
-BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integer counts with one count per read in the file (or two counts per fragment). Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you should use [bam2bw](https://github.com/jmschrei/bam2bw) to convert your BAM or fragment tsv file to bigWig files.
+BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integers with one count per read in the file (or two counts per fragment). Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you can either use [bam2bw](https://github.com/jmschrei/bam2bw) to convert your BAM/SAM or fragment tsv/tsv.gz files to bigWig files, or put these raw data files in the JSON and have bpnet-lite automatically do the conversion for you.
 
 If you are using stranded data, e.g., ChIP-seq:
 
@@ -26,53 +26,54 @@ bam2bw <bam1>.bam <bam2>.bam ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> 
 
 This command will create two bigWig files, one for the + strand and one for the - strand, using the name provided as the suffix.
 
-If you are using unstranded data, e.g., ATAC-seq:
+If you are using unstranded data:
 
 ```
 bam2bw <bam1>.bam <bam2>.bam ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> -v -u
 ```
 
-If you have a file of fragments, usually formatted as a .tsv or .tsv.gz and coming from ATAC-seq or scATAC-seq data, you can use the `-f` flag to map both the start and end (end-1, specifically) instead of just the 5' end.
+If you have a file of fragments, usually formatted as a .tsv or .tsv.gz and coming from ATAC-seq or scATAC-seq data, you can use the `-f` flag to map both the start and end (end-1, specifically) instead of just the 5' end. You will probably also want the `-u` flag because the underlying data is unstranded.
 
 ```
 bam2bw <frag1>.tsv.gz <frag2>.tsv.gz  ...  -s <genome>.chrom.sizes/<genome>.fa -n <name> -v -u -f
 ```
 
-These tools require positive loci (usually peaks for the respective activity) and negative loci (usually GC-matched background sequences) for training. The positive loci must be provided from the user, potentially by applying a tool like MACS2 to your .BAM files. The negative loci can be calculated using a command-line tool in this package, described later, or by specifying in the JSON that `find_negatives: true`. 
+These tools require positive loci (usually peaks for the respective activity or elements like promoters) and negative loci (usually GC-matched background sequences) for training. One or more BED files of positive loci are required from the user, potentially acquired by applying a tool like MACS2 to your .BAM files. The negative loci can be calculated using a command-line tool in this package, described later, or by specifying in the JSON that `find_negatives: true`. 
 
 ## BPNet
 
 ![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/5c6e6f73-aedd-4256-8776-5ef57a728d5e)
 
-BPNet is a convolutional neural network that has been used to map nucleotide sequences to experimental readouts, e.g. ChIP-seq, ChIP-nexus, and ChIP-exo, and identify the driving motifs underlying these assays. Although these models achieve high predictive accuracy, their main purpose is to be interpreted using feature attribution methods to inspect the cis-regulatory code underlying the readouts being modeled. Specifically, when paired with a method like DeepLIFT/SHAP, they can be used to explain the driving motifs and syntax of those motifs underlying each signal peak in a readout. When looking across all peaks these attributions can be clustered using an algorithm like TF-MoDISco to identify repeated patterns. Finally, one can construct a variety of perturbations to reference sequence to identify variant effect or marginalize out background. 
+BPNet is a convolutional neural network that maps nucleotide sequences to experimental readouts, e.g. ChIP-seq, ChIP-nexus, and ChIP-exo. It is composed of one big convolution layer, a series of dilated residual layers that mix information across distances, and another big convolution layer. Importantly, BPNet makes predictions for the total (log) read count in the region and also for the basepair resolution profiles, with these profiles being a probability vector over each position. 
+
+Although these models achieve high predictive accuracy, their main purpose is to estimate the influence of non-coding variants and to extract principles of the cis-regulatory code underlying the readouts being modeled. Specifically, when paired with a feature attribution algorithm like DeepLIFT/SHAP or in silico saturation mutagenesis, these models can assign to each nucleotide an importance in the model's predictions. These attributions can shed insight into how individual loci work, and when considered genome-wide, algorithms like TF-MoDISco can identify the repeated high-attribution patterns. 
 
 ### BPNet Command Line Tools
 
-bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps necessary for training and using BPNet models. Except for extracting GC-matched negatives, each command requires a JSON that contains the parameters, with examples of each in the `example_jsons` folder. See the README in that folder for exact parameters for each JSON.
+bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps necessary for training and using BPNet models. The fastest way to go from your raw data to results is to use the `bpnet pipeline-json` command followed by the `bpnet pipeline` command. 
 
 ```
-bpnet negatives -i <peaks>.bed -f <fasta>.fa -b <bigwig>.bw -o matched_loci.bed -l 0.02 -w 2114 -v
+bpnet pipeline-json -s hg38.fa -l my.bed.gz -i input1.bam -i input2.bam -c control1.bam -c control2.bam -n test -o pipeline.json -m JASPAR_2024.meme
+bpnet pipeline -p pipeline.json
+```
+
+The `bpnet-json` cmmand takes in pointers to your data files and produces a properly formatted `pipeline.json` file. These data files usually include a reference genome, some number of input (and optionally control) BAM/SAM/tsv/tsv.gz files (the `-i` and `-c` arguments can be repeated) a BED file of positive loci, and a MEME formatted motif database used for evaluation of the model.
+
+The `bpnet pipeline` command takes in the JSON and (0) optionally preprocesses your BAM/SAM/tsv/tsv.gz files and identifies GC-matched negatives (you can provide your own bigWigs and/or negatives and skip the respective portions of this), (1) trains a BPNet model, (2) makes predictions on the provided loci, (3) calculates DeepLIFT/SHAP attributions on the provided loci, (4) calls seqlets and annotates them using `ttl`, (5) runs TF-MoDISco and generates a report, and (6) runs in silico marginalizations using the provided motif database.
+
+These commands are separated because, although the first command produces a valid JSON that the second command can immediately use (no need to copy/paste JSONs from this GitHub anymore!), one may wish to modify some of the many parameters in the JSON. These parameters include the number of filters and layers in the model, the training and validation chromosomes, and the even very technical ones like the number of shuffles to use when calculating attributions and the p-value threshold for calling seqlets. The defaults for most of these steps seem reasonable in practice but there is immense flexibility there, e.g., the ability to train the model using a reference genome and then make predictions or attributions on synthetic sequences or the reference genome from another species. In this manner, the JSON serves as documentation for the experiments that have been performed.
+
+When running the pipeline, a JSON is produced for each one of the steps (except for running TF-MoDISco and annotating the seqlets, which uses `ttl`). Each of these JSON can be run by themselves using the appropriate built-in command. Because some of the values in the JSONs for these steps are set programmatically when running the file pipeline, e.g., the filenames to read in and save to, being able to inspect every one of the JSONs can be handy for debugging.
+
+```
 bpnet fit -p bpnet_fit_example.json
 bpnet predict -p bpnet_predict_example.json
 bpnet attribute -p bpnet_attribute_example.json
+bpnet seqlets -p bpnet_seqlet_example.json
 bpnet marginalize -p bpnet_marginalize_example.json
 ```
 
-Alternatively, one can use the `pipeline` command, whose purpose is to go all the way from the .BAM and .bed files to all the results of using BPNet without needing any hand-holding. This command handles the mapping of .BAM and .tsv files to bigWigs, the identification of GC-matched negatives, the training of the model, making predictions, calculating attributions, running [TF-MoDISco](https://github.com/jmschrei/tfmodisco-lite) and generating a report on the found motifs, and performing marginalizations. For each step (except the TF-MoDISco one), a JSON is generated to serve as a record for what the precise input to each step was, and to allow easy editing in case something has gone slightly wrong.
-
-```
-bpnet pipeline -p bpnet_pipeline_example.json
-```
-
-For a complete description of the pipeline JSON, see the `example_jsons` folded. However, it is extremely flexible. For example, a different set of sequences or loci can be used in each step, allowing one to train a model genome-wide and then apply it to a set of synthetic constructs in a separate FASTA. Alternatively, one can train the model using one reference genome and apply it to another reference genome.
-
-If you want to run the entire pipeline but find these JSONs daunting you can use the following command that takes the filepaths to the input data and fills in the default pipeline JSON for you. 
-
-```
-bpnet pipeline-json -i <.sam, .bam, .tsv, .tsv.gz, or .bw> -c <optional, but same as -i> -s <sequence fasta file> -l <positive loci BED file> -n <name to use for intermediary files> -o <name of JSON to produce> -m <motif file in MEME format>
-```
-
-This command can optionally take in `-f` if the data are fragments and `-u` if the data are unstranded, and `-i` and `-c` can be repeated. None of the above fields are required if your situation requires something more complicated, but if all fields are provided the `bpnet pipeline` command can be run directly on the JSON without modification. You should check the JSON to make sure that everything is correct, though, e.g., the right number of filters and layers in the model.
+For a complete description of each of the JSONs and the command-line tools, see the `example_jsons` folder.
 
 ## ChromBPNet
 
