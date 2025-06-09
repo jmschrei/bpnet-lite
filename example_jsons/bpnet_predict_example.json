@@ -3,18 +3,17 @@
    "in_window":2114,
    "out_window":1000,
    "verbose":true,
-   "device":'cuda',
+   "device":"cuda",
    "dtype":"float32",
    "chroms":["chr8", "chr10"],
    "model":"bpnet.64.8.torch",
-
    "sequences":"hg38.fa",
    "loci":"peaks.bed.gz",
    "controls": [
-      "ENCSR000BGW_control_plus.bigWig", 
-      "ENCSR000BGW_control_minus.bigWig"
+      "control.plus.bigWig", 
+      "control.minus.bigWig"
    ],
-
-   "profile_filename": "y_profile.npz",
-   "counts_filename": "y_counts.npz"
+   "profile_filename": "predictions.profile.npz",
+   "counts_filename": "predictions.counts.npz",
+   "idx_filename": "predictions.idxs.npz"
 }

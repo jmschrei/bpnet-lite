@@ -6,8 +6,8 @@
 	"in_window": 2114,
 	"out_window": 1000,
 	"name": "spi1",
-	"model": "spi1.torch",
-	"verbose": false,
+	"model": null,
+	
 	"batch_size": 64,
 	"max_jitter": 128,
 	"reverse_complement": true,
@@ -15,22 +15,27 @@
 	"validation_iter": 100,
 	"lr": 0.001,
 	"alpha": 100,
+	"device": "cuda",
+	"dtype", "float32",
 	"verbose": true,
+	
 	"min_counts": 0,
 	"max_counts": 99999999,
-	"sequences": "../../../oak/common/hg38/hg38.fa",
-	"loci": null,
-	'find_negatives': false,
+	"sequences": "hg38.fa",
+	"loci": ['peaks.bed.gz'],
+	'find_negatives': true,
 	'unstranded': false,
 	'fragments': false,
+	
 	"signals": [
-       "ENCSR000BGQ_plus.bigWig", 
-       "ENCSR000BGQ_minus.bigWig"
+       "input1.bam", 
+       "input2.bam"
     ],
 	"controls":[
-       "ENCSR000BGQ_control_plus.bigWig", 
-       "ENCSR000BGQ_control_minus.bigWig"
+       "control1.bam", 
+       "control2.bam"
     ],
+	
 	"fit_parameters": {
 		"batch_size": 64,
 		"training_chroms": ["chr2", "chr3", "chr4", "chr5", "chr6", "chr7", 
@@ -38,15 +43,13 @@
 			"chr17", "chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
 		"validation_chroms": ["chr8", "chr10"],
 		"sequences": null,
-		"loci": [
-			"peaks.bed.gz",
-			"gc_neg_only.bed.gz"
-		],
+		"loci": null,
 		"signals": null,
-		"controls": null,	
+		"controls": null,
 		"verbose": null,
 		"random_state": null
 	},
+	
 	"predict_parameters": {
 		"batch_size": 64,
 		"chroms": ["chr8", "chr10"],
@@ -58,9 +61,10 @@
 		"controls": null,
 		"verbose": null
 	},
+	
 	"attribute_parameters": {
 		"batch_size": 1,
-		"output": "profile",
+		"output": "counts",
 		"chroms": ["chr8"],
 		"loci": "peaks.bed.gz",
 		"ohe_filename": null,
@@ -68,20 +72,37 @@
 		"n_shuffles": 20,
 		"random_state": null,
 		"verbose": null
-
 	},
+	
+	"seqlet_parameters": {
+		"threshold": 0.01,
+		"min_seqlet_len": 4,
+		"max_seqlet_len": 25,
+		"additional_flanks": 3,
+		"in_window": null,
+		"chroms": null,
+		"verbose": null,
+		"loci": null,
+		"ohe_filename": null,
+		"attr_filename": null,
+		"idx_filename": null,
+		"output_filename": null
+	},
+	
 	"modisco_motifs_parameters": {
 		"n_seqlets": 100000,
 		"output_filename": null,
 		"verbose": null
 	},
+	
 	"modisco_report_parameters": {
 		"motifs": "motifs.meme",
 		"output_folder": null,
 		"verbose": null
 	},
+	
 	"marginalize_parameters": {
-		"loci": "gc_neg_only.bed.gz",
+		"loci": null,
 		"n_loci": 100,
 		"shuffle": false,
 		"random_state": null,

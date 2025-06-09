@@ -11,10 +11,11 @@
    "reverse_complement": true,
    "max_epochs": 50,
    "validation_iter": 100,
+   "early_stopping": null,
    "lr": 0.001,
    "alpha": 100,
-   "dtype": 'float32',
-   "device": 'cuda',
+   "dtype": "float32",
+   "device": "cuda",
    "verbose": false,
 
    "min_counts": 0,
@@ -25,15 +26,15 @@
       "chr18", "chr19", "chr20", "chr21", "chr22", "chrX"],
    "validation_chroms": ["chr8", "chr10"],
 
-   "sequences":"../../oak/common/hg38/hg38.fa",
-   "loci":"../../tfatlas/processed_data/ENCSR000BGW/peaks.bed.gz",
+   "sequences":"hg38.fa",
+   "loci":"peaks.bed.gz",
    "signals":[
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_minus.bigWig"
+      "input.plus.bigWig", 
+      "input.minus.bigWig"
    ],
    "controls":[
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_plus.bigWig", 
-      "../../tfatlas/processed_data/ENCSR000BGW/ENCSR000BGW_control_minus.bigWig"
+      "control.plus.bigWig", 
+      "control.minus.bigWig"
    ],
    "random_state": 0
 }

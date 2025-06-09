@@ -14,6 +14,7 @@
 	"model": "bpnet.64.8.torch",
 	"output_filename":"marginalize/",
 	"random_state":0,
-	"minimal": true
+	"minimal": true,
 	"attributions": false,
+	"device": "cuda"
 }

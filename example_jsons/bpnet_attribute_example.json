@@ -8,10 +8,13 @@
    "sequences":"hg38.fa",
    "loci":"peaks.bed.gz",
    "model":"bpnet.64.8.torch",
-   "output":"count",
+   "output":"counts",
 
-   "ohe_filename": "ohe.npz",
-   "attr_filename": "attr.npz",
+   "ohe_filename": "attributions.ohe.npz",
+   "attr_filename": "attributions.attr.npz",
+   "idx_filename": "attributions.idx.npz",
    "n_shuffles":20,
-   "random_state":0
+   "warning_threshold": 1e-3,
+   "random_state":0,
+   "device": "cuda"
 }

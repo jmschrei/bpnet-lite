@@ -8,6 +8,7 @@ os.environ['TORCH_CUDNN_V8_API_ENABLED'] = '1'
 import sys
 import numpy
 import torch
+import pandas
 import argparse
 import subprocess
 
@@ -261,7 +262,7 @@ default_marginalize_parameters = {
 	'motifs': None,
 	'loci': None,
 	'attributions': False,
-	'n_loci': None,
+	'n_loci': 100,
 	'shuffle': False,
 	'model': None,
 	'output_filename':'marginalize/',
@@ -459,8 +460,9 @@ def merge_parameters(parameters, default_parameters):
 		The merged set of parameters.
 	"""
 
-	with open(parameters, "r") as infile:
-		parameters = json.load(infile)
+	if isinstance(parameters, str):
+		with open(parameters, "r") as infile:
+			parameters = json.load(infile)
 
 	unset_parameters = ("controls", "warning_threshold", "early_stopping")
 	for parameter, value in default_parameters.items():
@@ -967,6 +969,9 @@ elif args.cmd == 'pipeline':
 	_check_set(annotation_parameters, "output_filename", pname+".seqlets_annotated.bed")
 	_check_set(annotation_parameters, "motifs", parameters["motifs"])
 
+	annotation_parameters = merge_parameters(annotation_parameters, 
+		default_annotation_parameters)
+
 	cmd = ["ttl"]
 	cmd += ["-f", annotation_parameters["sequences"]]
 	cmd += ["-b", annotation_parameters["seqlet_filename"]]
@@ -985,6 +990,12 @@ elif args.cmd == 'pipeline':
 	with open(annotation_parameters['output_filename'], "w") as f:
 		subprocess.run(cmd, check=True, stdout=f)
 
+	annotated_seqlets = pandas.read_csv(annotation_parameters['output_filename'],
+		sep="\t", header=None, usecols=(3,), names=['motifs'])
+
+	seqlet_count = annotated_seqlets.value_counts()
+	seqlet_count.to_csv(pname+".motif_seqlet_count.tsv", sep="\t")
+
 
 	###
 	# Step 5.1: Run TF-MoDISco
@@ -994,8 +1005,14 @@ elif args.cmd == 'pipeline':
 		print("\nStep 5.1: TF-MoDISco motifs")
 
 	modisco_parameters = parameters['modisco_motifs_parameters']
+
 	_check_set(modisco_parameters, "output_filename", 
 		pname+'_modisco_results.h5')
+	_check_set(modisco_parameters, "verbose",
+		parameters['verbose'])
+
+	modisco_parameters = merge_parameters(modisco_parameters,
+		default_pipeline_parameters['modisco_motifs_parameters'])
 
 	cmd = "modisco motifs -s {} -a {} -n {} -o {}".format(
 		attribute_parameters['ohe_filename'], 
@@ -1040,6 +1057,7 @@ elif args.cmd == 'pipeline':
 
 	marginalize_parameters = _extract_set(parameters, 
 		default_marginalize_parameters, "marginalize_parameters")
+
 	_check_set(marginalize_parameters, "loci", parameters["negatives"])
 	_check_set(marginalize_parameters, 'output_filename', pname+"_marginalize/")
 	_check_set(marginalize_parameters, 'motifs', parameters['motifs'])
