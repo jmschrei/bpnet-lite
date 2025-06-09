@@ -143,6 +143,18 @@ This JSON in its entirety can be quite intimidating. Scroll past it for a minima
 }
 ```
 
+As mentioned, this JSON can be quite intimidating because it contains parameters for *every* step, including the data preprocessing and all of the downstream analyses. However, not all parameters have to be specified. When a value is set ot `null` or not included in the JSON, the tool reverts back to the default for that parameter. Some parameters are required, and you will be prompted to pass them in if this is the case. If you strip out all of the parameters that are not required, here is a minimal BPNet pipeline JSON.
+
+```
+```
+
+
+
+If you just want to get started, it may seem a lot to have to consider all of these parameters. This is why we included the `bpnet pipeline-json` command, which will automatically format the JSON for you given the provided data filenames. That way you can just poke the specific parameters you think need to be changed.
+
+Regardless, not all parameters have to be specified. When a value is set ot `null` or not included in the JSON, the tool reverts back to the default for that parameter. Some parameters are required, and you will be prompted to pass them in if this is the case. However, if you strip out all of the parameters that are not required, here is a minimal BPNet pipeline JSON.
+
+
 
 
 ### BPNet Fit Parameters
