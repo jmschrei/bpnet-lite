@@ -2,10 +2,10 @@
 
 [![PyPI Downloads](https://static.pepy.tech/badge/bpnet-lite)](https://pepy.tech/projects/bpnet-lite)
 
-> **Note**
-> IMPORTANT: bpnet-lite is not meant to replace the full service implementations of BPNet or ChromBPNet. Please see the official repositories for those projects for TensorFlow/Keras implementations of those models along with complete tutorials on how to use them effectively.
+> [!IMPORTANT]
+> bpnet-lite is not meant to replace the full service implementations of BPNet or ChromBPNet and is still under development. Please see the official repositories for those projects for complete TensorFlow/Keras implementations of those models along with tutorials on how to use them effectively. Although bpnet-lite is capable of loading models trained using these TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs, the fitting procedure in bpnet-lite does not match yet and can significantly underperform in some cases, particularly with ChromBPNet.
 
-bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [paper | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. Additionally, it contains efficient data loaders and common operations one would do with these trained models including calculating attributions, running TF-MoDISco, and performing marginalization experiments. These operations are wrapped in command-line tools for ease-of-use and organized in a pipeline command representing the standard workflow. This package is meant to be used for quickly exploring data sets using BPNet or ChromBPNet and as a springboard for prototyping new ideas that involve modifying the code. 
+bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [paper | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. Additionally, it contains efficient data loaders and common operations one would do with these trained models including calculating attributions, running TF-MoDISco, and performing marginalization experiments. These operations are wrapped in command-line tools for ease-of-use and organized in a pipeline command representing the standard workflow. This package is primarily meant to be used for prototyping new ideas that involve modifying the code and for loading models trained using the official repositories into PyTorch. 
 
 #### Installation
 
