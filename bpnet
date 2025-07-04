@@ -85,8 +85,10 @@ json_parser.add_argument("-i", "--inputs", type=str, action='append',
 	help="A BAM or bigwig file. Repeatable.")
 json_parser.add_argument("-c", "--controls", type=str, action='append',
 	help="A BAM or bigwig file. Repeatable.")
-json_parser.add_argument("-l", "--loci", type=str, action='append',
-	help="A BED-formatted file of loci to use. Repeatable.")
+json_parser.add_argument("-p", "--peaks", type=str, action='append',
+	help="A BED-formatted file of peaks to use. Repeatable.")
+json_parser.add_argument("-neg", "--negatives", type=str, action='append',
+	help="A BED-formatted file of negative loci to use. Repeatable.")
 json_parser.add_argument("-n", "--name", type=str,
 	help="Name to use as a suffix in intermediary files.")
 json_parser.add_argument("-u", "--unstranded", action='store_true', 
@@ -165,10 +167,12 @@ default_fit_parameters = {
 	'max_epochs': 50,
 	'validation_iter': 100,
 	'lr': 0.001,
+	'negative_ratio': 0.1,
 	'alpha': 100,
 	'dtype': 'float32',
 	'device': 'cuda',
-	'early_stopping': None,
+	'scheduler': False,
+	'early_stopping': 5,
 	'verbose': False,
 
 	'min_counts': 0,
@@ -178,6 +182,7 @@ default_fit_parameters = {
 	'validation_chroms': validation_chroms,
 	'sequences': None,
 	'loci': None,
+	'negatives': None,
 	'signals': None,
 	'controls': None,
 	'random_state': None
@@ -284,7 +289,7 @@ default_pipeline_parameters = {
 	'model': None,
 	'dtype': 'float32',
 	'device': 'cuda',
-	'early_stopping': None,
+	'early_stopping': 5,
 
 	# Data parameters
 	'batch_size': 64,
@@ -293,6 +298,8 @@ default_pipeline_parameters = {
 	'max_epochs': 20,
 	'validation_iter': 100,
 	'lr': 0.001,
+	'scheduler': False,
+	'negative_ratio': 0.1,
 	'alpha': 100,
 	'verbose': True,
 	'min_counts': 0,
@@ -312,6 +319,7 @@ default_pipeline_parameters = {
 	'fit_parameters': {
 		'batch_size': 64,
 		'training_chroms': training_chroms,
+		'validation_chroms': validation_chroms,
 		'sequences': None,
 		'loci': None,
 		'signals': None,
@@ -511,7 +519,8 @@ if args.cmd == 'pipeline-json':
 	parameters = default_pipeline_parameters.copy()
 	
 	parameters['sequences'] = args.sequences
-	parameters['loci'] = args.loci
+	parameters['loci'] = args.peaks
+	parameters['negatives'] = args.negatives
 	parameters['signals'] = args.inputs
 	parameters['controls'] = args.controls
 	parameters['name'] = args.name
@@ -532,10 +541,16 @@ if args.cmd == 'pipeline-json':
 if args.cmd == "fit":
 	parameters = merge_parameters(args.parameters, default_fit_parameters)
 
+	if parameters['verbose']:
+		print("Training Chroms: ", parameters['training_chroms'])
+		print("Vaidation Chroms: ", parameters['validation_chroms'], "\n")
+
 	###
+	parameters['summits'] = True
 
 	training_data = PeakGenerator(
-		loci=parameters['loci'], 
+		peaks=parameters['loci'],
+		negatives=parameters['negatives'],
 		sequences=parameters['sequences'],
 		signals=parameters['signals'],
 		controls=parameters['controls'],
@@ -543,9 +558,11 @@ if args.cmd == "fit":
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
 		max_jitter=parameters['max_jitter'],
+		negative_ratio=parameters['negative_ratio'],
 		reverse_complement=parameters['reverse_complement'],
 		min_counts=parameters['min_counts'],
 		max_counts=parameters['max_counts'],
+		summits=parameters['summits'],
 		random_state=parameters['random_state'],
 		batch_size=parameters['batch_size'],
 		verbose=parameters['verbose']
@@ -563,6 +580,7 @@ if args.cmd == "fit":
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
 		verbose=parameters['verbose']
 	)
+	
 
 	if parameters['controls'] is not None:
 		valid_sequences, valid_signals, valid_controls = valid_data
@@ -586,12 +604,26 @@ if args.cmd == "fit":
 		verbose=parameters['verbose']).to(parameters['device'])
 
 	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
+	scheduler = None
+
+	if parameters['scheduler']:
+		n = len(training_data.dataset) / parameters['batch_size']
+		print(n)
+
+		scheduler1 = torch.optim.lr_scheduler.LinearLR(optimizer, 
+			start_factor=1e-4, end_factor=1.0, 
+			total_iters=n*3, last_epoch=-1, verbose=True) 
+		scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 
+			T_max=n * (parameters['max_epochs'] - 3), last_epoch=-1, verbose=True)
+		scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, 
+			[scheduler1, scheduler2], milestones=[n*3], last_epoch=-1)
 
 	if parameters['verbose']:
-		print("Training Set Size: ", training_data.dataset.sequences.shape[0])
-		print("Validation Set Size: ", valid_sequences.shape[0])
+		print("\nTraining Set Size: ", training_data.dataset.sequences.shape[0])
+		print("Validation Set Size: ", valid_sequences.shape[0], "\n")
 
-	model.fit(training_data, optimizer, X_valid=valid_sequences, 
+	model.fit(training_data, optimizer, scheduler,
+		X_valid=valid_sequences, 
 		X_ctl_valid=valid_controls, y_valid=valid_signals, 
 		max_epochs=parameters['max_epochs'], 
 		validation_iter=parameters['validation_iter'], 
@@ -884,9 +916,6 @@ elif args.cmd == 'pipeline':
 	if parameters.get('model', None) == None:
 		name = pname + '.bpnet.fit.json'
 		parameters['model'] = pname + '.torch'
-		
-		if parameters['negatives'] is not None:
-			fit_parameters['loci'] += parameters['negatives']
 
 		with open(name, 'w') as outfile:
 			outfile.write(json.dumps(fit_parameters, sort_keys=True, indent=4))

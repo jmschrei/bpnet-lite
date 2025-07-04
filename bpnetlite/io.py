@@ -74,12 +74,19 @@ class DataGenerator(torch.utils.data.Dataset):
 		self.signals = signals
 		self.controls = controls
 		self.sequences = sequences
+		
+		self.random_idxs = None
+		self.n_random = 1000000
 
 	def __len__(self):
 		return len(self.sequences)
 
 	def __getitem__(self, idx):
-		i = self.random_state.choice(len(self.sequences), p=self.p)
+		if idx % self.n_random == 0:
+			self.random_idxs = self.random_state.choice(len(self), p=self.p, 
+				size=self.n_random)
+
+		i = self.random_idxs[idx % self.n_random]
 		j = 0 if self.max_jitter == 0 else self.random_state.randint(
 			self.max_jitter*2) 
 
@@ -102,10 +109,11 @@ class DataGenerator(torch.utils.data.Dataset):
 		return X, y	
 
 
-def PeakGenerator(loci, sequences, signals, controls=None, loci_weights=None,
+def PeakGenerator(peaks, negatives, sequences, signals, controls=None,
 	chroms=None, in_window=2114, out_window=1000, max_jitter=128, 
-	reverse_complement=True, min_counts=None, max_counts=None, random_state=None, 
-	pin_memory=True, num_workers=0, batch_size=32, verbose=False):
+	negative_ratio=0.1, reverse_complement=True, min_counts=None, max_counts=None,
+	summits=False, random_state=None, pin_memory=True, num_workers=0,
+	batch_size=32, verbose=False):
 	"""This is a constructor function that handles all IO.
 
 	This function will extract signal from all signal and control files,
@@ -114,12 +122,17 @@ def PeakGenerator(loci, sequences, signals, controls=None, loci_weights=None,
 
 	Parameters
 	----------
-	loci: str or pandas.DataFrame or list/tuple of such
-		Either the path to a bed file or a pandas DataFrame object containing
-		three columns: the chromosome, the start, and the end, of each locus
-		to train on. Alternatively, a list or tuple of strings/DataFrames where
-		the intention is to train on the interleaved concatenation, i.e., when
-		you want ot train on peaks and negatives.
+	peaks: str or pandas.DataFrame or list/tuple of such
+		A BED-formatted file containing peak coordinates. This can be either
+		the string path to the BED file or a pandas DataFrame object containing
+		three columns: chrom, start, and end. Alternatively, this can be a list
+		of such objects whose coordinates will be interleaved.
+
+	negatives: str or pandas.DataFrame or list/tuple of such
+		A BED-formatted file containing negative coordinates. This can be either
+		the string path to the BED file or a pandas DataFrame object containing
+		three columns: chrom, start, and end. Alternatively, this can be a list
+		of such objects whose coordinates will be interleaved.
 
 	sequences: str or dictionary
 		Either the path to a fasta file to read from or a dictionary where the
@@ -152,6 +165,14 @@ def PeakGenerator(loci, sequences, signals, controls=None, loci_weights=None,
 	max_jitter: int, optional
 		The maximum amount of jitter to add, in either direction, to the
 		midpoints that are passed in. Default is 128.
+
+	negative_ratio: float, optional
+		The ratio of negatives compared to peaks in each batch. A value of 1 means
+		that each batch is balanced, and a value of 10 means that there would be 10
+		negatives for each positive. Note that this is independent of the number of
+		peaks and negatives provided. Even if the `peaks` input has 10x the number
+		of coordinates as the `negatives` one, if the ratio is 1 each batch during
+		training will be balanced (on average).
 
 	reverse_complement: bool, optional
 		Whether to reverse complement-augment half of the data. Default is True.
@@ -189,21 +210,54 @@ def PeakGenerator(loci, sequences, signals, controls=None, loci_weights=None,
 		A PyTorch DataLoader wrapped DataGenerator object.
 	"""
 
-	X = extract_loci(loci=loci, sequences=sequences, signals=signals, 
+	X_peaks = extract_loci(loci=peaks, sequences=sequences, signals=signals, 
 		in_signals=controls, chroms=chroms, in_window=in_window, 
 		out_window=out_window, max_jitter=max_jitter, min_counts=min_counts,
-		max_counts=max_counts, ignore=list('QWERYUIOPSDFHJKLZXVBNM'), 
-		verbose=verbose)
+		max_counts=max_counts, summits=summits, 
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), verbose=verbose)
 
+	X_bg = extract_loci(loci=negatives, sequences=sequences, signals=signals, 
+		in_signals=controls, chroms=chroms, in_window=in_window, 
+		out_window=out_window, max_jitter=max_jitter, min_counts=min_counts,
+		max_counts=max_counts, summits=False,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'), verbose=verbose)
+
+	###
+
+	seq_peak, signal_peak = X_peaks[:2]
+	seq_bg, signal_bg = X_bg[:2]
+
+	seq = torch.cat([seq_peak, seq_bg], dim=0)
+	sig = torch.cat([signal_peak, signal_bg], dim=0)
+	
 	if controls is not None:
-		sequences, signals_, controls_ = X
+		con = torch.cat([X_peaks[-1], X_bg[-1]], dim=0)
 	else:
-		sequences, signals_ = X
-		controls_ = None
+		con = None
 
-	X_gen = DataGenerator(sequences, signals_, controls=controls_, 
-		in_window=in_window, out_window=out_window, max_jitter=max_jitter,
-		reverse_complement=reverse_complement, random_state=random_state)
+	###
+
+	n_peak, n_bg = len(seq_peak), len(seq_bg)
+	r = negative_ratio * n_peak / n_bg
+	
+	p = numpy.ones(n_peak + n_bg, dtype=numpy.float32)
+	p[n_peak:] = r
+	p = p / p.sum()
+
+	if verbose:
+		print("\n{} peaks and {} negatives extracted.".format(n_peak, n_bg))
+		print("Sampling ratios are 1:{:3.3} peaks:negatives after accounting for # examples in each.\n".format(r))
+
+	X_gen = DataGenerator(
+		sequences=seq, 
+		signals=sig, 
+		controls=con,
+		p=p,
+		in_window=in_window, 
+		out_window=out_window, 
+		max_jitter=max_jitter,
+		reverse_complement=reverse_complement, 
+		random_state=random_state)
 
 	X_gen = torch.utils.data.DataLoader(X_gen, pin_memory=pin_memory,
 		num_workers=num_workers, batch_size=batch_size) 

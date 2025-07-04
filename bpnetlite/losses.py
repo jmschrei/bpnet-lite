@@ -1,5 +1,6 @@
 # losses.py
 # Authors: Jacob Schreiber <jmschreiber91@gmail.com>
+# Adapted from code by Alex Tseng
 
 """
 This module contains the losses used by BPNet for training.
@@ -7,33 +8,45 @@ This module contains the losses used by BPNet for training.
 
 import torch
 
+
 def MNLLLoss(logps, true_counts):
 	"""A loss function based on the multinomial negative log-likelihood.
 
 	This loss function takes in a tensor of normalized log probabilities such
-	that the sum of each row is equal to 1 (e.g. from a log softmax) and
-	an equal sized tensor of true counts and returns the probability of
-	observing the true counts given the predicted probabilities under a
-	multinomial distribution. Can accept tensors with 2 or more dimensions
-	and averages over all except for the last axis, which is the number
-	of categories.
+	that the logsumexp across the last dimension is equal to 0 (i.e., the
+	sum of the exponentiated values is equal to 1), and a tensor of true
+	integer counts, and returns the log probability of observing those counts
+	given the predicted distributions.
+
+	This function can accept tensors with any number of dimensions and calculates
+	the loss across the last dimension. For example, if they are both A x B x L
+	arrays, then the correlation of corresponding L-arrays will be computed and 
+	returned in an A x B array.
+
+	An important note about this loss is that, despite performing very well for
+	these basepair resolution models, there is nothing spatial about this loss.
+	Each position in the last dimension is viewed as an independent category, and
+	having high counts one basepair away is just as bad as having it 100 basepairs
+	away. There is nothing wrong with this, particularly if you care strongly
+	about basepair resolution, but you should keep this in mind.
 
 	Adapted from Alex Tseng.
 
+
 	Parameters
 	----------
-	logps: torch.tensor, shape=(n, ..., L)
+	logps: torch.Tensor, shape=(n, ..., L)
 		A tensor with `n` examples and `L` possible categories. 
 
-	true_counts: torch.tensor, shape=(n, ..., L)
+	true_counts: torch.Tensor, shape=(n, ..., L)
 		A tensor with `n` examples and `L` possible categories.
+
 
 	Returns
 	-------
-	loss: float
+	loss: torch.Tensor, shape=(n, ...)
 		The multinomial log likelihood loss of the true counts given the
-		predicted probabilities, averaged over all examples and all other
-		dimensions.
+		predicted probabilities
 	"""
 
 	log_fact_sum = torch.lgamma(torch.sum(true_counts, dim=-1) + 1)
@@ -53,6 +66,7 @@ def log1pMSELoss(log_predicted_counts, true_counts):
 	Note: The predicted counts are in log space but the true counts are in the
 	original count space.
 
+
 	Parameters
 	----------
 	log_predicted_counts: torch.tensor, shape=(n, ...)
@@ -62,6 +76,7 @@ def log1pMSELoss(log_predicted_counts, true_counts):
 	true_counts: torch.tensor, shape=(n, ...)
 		A tensor of the true counts where the first axis is the number of
 		examples.
+
 
 	Returns
 	-------

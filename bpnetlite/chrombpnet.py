@@ -111,7 +111,10 @@ class ChromBPNet(torch.nn.Module):
 		acc_profile, acc_counts = self.accessibility(X)
 		bias_profile, bias_counts = self.bias(X)
 
-		y_profile = acc_profile + bias_profile
+		n0, n1 = acc_profile.shape[-1], bias_profile.shape[-1]
+		w = (n1 - n0) // 2
+		
+		y_profile = acc_profile + bias_profile[:, :, w:-w]
 		y_counts = self._log(self._exp1(acc_counts) + self._exp2(bias_counts))
 		
 		return y_profile, y_counts
@@ -181,6 +184,8 @@ class ChromBPNet(torch.nn.Module):
 			Default is False
 		"""
 
+		print("Warning: BPNet and ChromBPNet models trained using bpnet-lite may underperform those trained using the official repositories. See the GitHub README for further documentation.")
+		
 		dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
 		
 		y_bias_profile, y_bias_counts = predict(self.bias, X_valid, 
@@ -201,7 +206,7 @@ class ChromBPNet(torch.nn.Module):
 			for iteration, (X, y) in enumerate(training_data):
 				self.accessibility.train()
 
-				X = X.cuda()
+				X = X.cuda().float()
 				y = y.cuda()
 
 				optimizer.zero_grad()

@@ -233,7 +233,7 @@ class BPNet(torch.nn.Module):
 
 		self.alpha = alpha
 		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
-		self.trimming = trimming or 2 ** n_layers
+		self.trimming = trimming or 47 + sum(2**i for i in range(1, n_layers+1))
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
 		self.irelu = torch.nn.ReLU()
@@ -311,9 +311,10 @@ class BPNet(torch.nn.Module):
 		return y_profile, y_counts
 
 
-	def fit(self, training_data, optimizer, X_valid=None, X_ctl_valid=None, 
-		y_valid=None, max_epochs=100, batch_size=64, validation_iter=100, 
-		dtype='float32', device='cuda', early_stopping=None, verbose=True):
+	def fit(self, training_data, optimizer, scheduler=None, X_valid=None, 
+		X_ctl_valid=None, y_valid=None, max_epochs=100, batch_size=64, 
+		validation_iter=100, dtype='float32', device='cuda', early_stopping=None, 
+		verbose=True):
 		"""Fit the model to data and validate it periodically.
 
 		This method controls the training of a BPNet model. It will fit the
@@ -337,6 +338,10 @@ class BPNet(torch.nn.Module):
 
 		optimizer: torch.optim.Optimizer
 			An optimizer to control the training of the model.
+
+		scheduler: torch.optim.lr_scheduler, optional
+			An optional learning rate scheduler which changes the learning rate
+			across batches. If None, do not use a scheduler. Default is None.
 
 		X_valid: torch.tensor or None, shape=(n, 4, 2114)
 			A block of sequences to validate on periodically. If None, do not
@@ -374,14 +379,16 @@ class BPNet(torch.nn.Module):
 		early_stopping: int or None, optional
 			Whether to stop training early. If None, continue training until
 			max_epochs is reached. If an integer, continue training until that
-			number of `validation_iter` ticks has been hit without improvement
-			in performance. Default is None.
+			number of epochs has been hit without improvement in performance. 
+			Default is None.
 
 		verbose: bool
 			Whether to print out the training and evaluation statistics during
 			training. Default is True.
 		"""
 
+		print("Warning: BPNet and ChromBPNet models trained using bpnet-lite may underperform those trained using the official repositories. See the GitHub README for further documentation.")
+        
 		if X_valid is not None:
 			y_valid_counts = y_valid.sum(dim=2)
 
@@ -435,10 +442,14 @@ class BPNet(torch.nn.Module):
 					loss = profile_loss + self.alpha * count_loss
 					loss.backward()
 					optimizer.step()
+					
+					if scheduler is not None:
+						scheduler.step()
 
 				# Report measures if desired
 				if verbose and iteration % validation_iter == 0:
 					train_time = time.time() - tic
+					#print(scheduler.get_last_lr())
 
 					with torch.no_grad():
 						self.eval()
@@ -479,15 +490,11 @@ class BPNet(torch.nn.Module):
 						if valid_loss < best_loss:
 							torch.save(self, "{}.torch".format(self.name))
 							best_loss = valid_loss
-							early_stop_count = 0
-						else:
-							early_stop_count += 1
-
-				if early_stopping is not None and early_stop_count >= early_stopping:
-					break
+							early_stop_count = -1
 
 				iteration += 1
 
+			early_stop_count += 1
 			if early_stopping is not None and early_stop_count >= early_stopping:
 				break
 
@@ -547,7 +554,7 @@ class BPNet(torch.nn.Module):
 		n_layers = max(layer_names) - 2
 
 		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
-			n_control_tracks=0, trimming=(2114-1000)//2)
+			n_control_tracks=0, trimming=None)
 
 		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
 			x[:]).permute(2, 1, 0))
@@ -617,7 +624,7 @@ class BPNet(torch.nn.Module):
 		n_filters = w[name][k].shape[2]
 
 		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
-			n_control_tracks=0, trimming=(2114-1000)//2)
+			n_control_tracks=0)
 
 		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
 			x[:]).permute(2, 1, 0))
