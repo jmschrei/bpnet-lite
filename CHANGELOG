@@ -3,6 +3,23 @@ Release History
 ===============
 
 
+Version 0.9.1
+=============
+
+Highlights
+----------
+
+	- Improved documentation in losses.py and performance.py
+	- Cast X as float in ChromBPNet code
+	- Improved automatic trimming logic based on actual receptive field
+	- When using ChromBPNet, resizes the bias model predictions when it is a 
+	different size than the accessibility model
+	- Add negative sampling ratio to the dataloader and BPNet training code
+	- Add optional learning rate scheduler to BPNet training
+
+
+
+
 Version 0.9.0
 =============
 
