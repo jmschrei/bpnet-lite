@@ -2,10 +2,10 @@
 
 [![PyPI Downloads](https://static.pepy.tech/badge/bpnet-lite)](https://pepy.tech/projects/bpnet-lite)
 
-> **Note**
-> IMPORTANT: bpnet-lite is not meant to replace the full service implementations of BPNet or ChromBPNet. Please see the official repositories for those projects for TensorFlow/Keras implementations of those models along with complete tutorials on how to use them effectively.
+> [!IMPORTANT]
+> bpnet-lite is not meant to replace the full service implementations of BPNet or ChromBPNet and is still under development. Please see the official repositories for those projects for complete TensorFlow/Keras implementations of those models along with tutorials on how to use them effectively. Although bpnet-lite is capable of loading models trained using these TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs, the fitting procedure in bpnet-lite does not match yet and can significantly underperform in some cases, particularly with ChromBPNet.
 
-bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [paper | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. Additionally, it contains efficient data loaders and common operations one would do with these trained models including calculating attributions, running TF-MoDISco, and performing marginalization experiments. These operations are wrapped in command-line tools for ease-of-use and organized in a pipeline command representing the standard workflow. This package is meant to be used for quickly exploring data sets using BPNet or ChromBPNet and as a springboard for prototyping new ideas that involve modifying the code. 
+bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [[preprint](https://www.biorxiv.org/content/10.1101/2024.12.25.630221v2) | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. Additionally, it contains efficient data loaders and common operations one would do with these trained models including calculating attributions, running TF-MoDISco, and performing marginalization experiments. These operations are wrapped in command-line tools for ease-of-use and organized in a pipeline command representing the standard workflow. This package is primarily meant to be used for prototyping new ideas that involve modifying the code and for loading models trained using the official repositories into PyTorch. 
 
 #### Installation
 
@@ -13,7 +13,7 @@ bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/art
 
 #### Data Preprocessing
 
-> **Note**
+> [!NOTE]
 > As of v0.9.0 you can now include BAM/SAM and .tsv/.tsv.gz files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed using bam2bw. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data anymore.
 
 BPNet and ChromBPNet models are both trained on read ends that have been mapped at basepair resolution (hence, the name). Accordingly, the data used for training is made up of integers with one count per read in the file (or two counts per fragment). Once you have used your favorite tool to align your FASTQ of reads to your genome of interest (we recommend ChroMAP), you can either use [bam2bw](https://github.com/jmschrei/bam2bw) to convert your BAM/SAM or fragment tsv/tsv.gz files to bigWig files, or put these raw data files in the JSON and have bpnet-lite automatically do the conversion for you.
@@ -78,6 +78,9 @@ For a complete description of each of the JSONs and the command-line tools, see 
 ## ChromBPNet
 
 ![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/e6f9bbdf-f107-4b3e-8b97-dc552af2239c)
+
+> [!Warning]
+> Several users have reported that the performance of ChromBPNet models trained using bpnet-lite significantly underperforms those trained using the official ChromBPNet repo. We are currently looking into this. Until we resolve the differences, please consider using the official repository for training your ChromBPNet models and then bpnet-lite for loading them into PyTorch.
 
 ChromBPNet extends the original modeling framework to DNase-seq and ATAC-seq experiments. A separate framework is necessary because the cutting enzymes used in these experiments, particularly the hyperactive Tn5 enzyme used in ATAC-seq experiments, have soft sequences preferences that can distort the observed readouts. Hence, it becomes necessary to train a small BPNet model to explicitly capture this soft sequence (the "bias model") bias before subsequently training a second BPNet model jointly with the frozen bias model to capture the true drivers of accessibility (the "accessibiity model"). Together, these models and the manner in which their predictions are combined are referred to as ChromBPNet. 
 
