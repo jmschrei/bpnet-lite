@@ -137,7 +137,7 @@ Although wrapping all that functionality is good for the training set, the valid
 ```python
 valid_chroms = ['chr{}'.format(i) for i in range(18, 23)]
 
-X_valid, y_valid, X_ctl_valid = extract_peaks(peaks, seqs, signals, controls, chroms=valid_chroms, max_jitter=0)
+X_valid, y_valid, X_ctl_valid = extract_loci(peaks, seqs, signals, controls, chroms=valid_chroms, max_jitter=0)
 ```
 Note that this function can be used without control tracks and, in that case, will only return two arguments. Further, it can used with only a FASTA and will only return one argument in that case: the extracted sequences. 
 
