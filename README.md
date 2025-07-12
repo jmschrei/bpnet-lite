@@ -105,6 +105,9 @@ chrombpnet pipeline -p chrombpnet_pipeline_example.json
 
 ## Python API
 
+> [!Warning]
+> This is no longer accurate as of v0.9.2 with the switch to the PeakNegativeSampler. I will update soon.
+
 If you'd rather train and use BPNet/ChromBPNet models programmatically, you can use the Python API. The command-line tool is made up of wrappers around these methods and functions, so please take a look if you'd like additional documentation on how to get started.
 
 The first step is loading data. Much like with the command-line tool, if you're using the built-in data loader then you need to specify where the FASTA containing sequences, a BED file containing loci and bigwig files to train on are. The signals need to be provided in a list and the index of each bigwig in the list will correspond to a model output. Optionally, you can also provide control bigwigs. See the BPNet paper for how these control bigwigs get used during training. 
