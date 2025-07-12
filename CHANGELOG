@@ -2,6 +2,54 @@
 Release History
 ===============
 
+Version 0.9.2
+=============
+
+bpnet cmd
+---------
+
+	- Reorganized imports to make `bpnet pipeline-json` immediate
+	- Added a large number of print statements if verbose is True
+	- Added an evaluation at the end of the `fit` command to report validation set performance measures
+	- Added an `evaluate` command that runs a model on a provided set and reports performance measures
+	- Added a reverse complement averaging function to the prediction command
+	- Changed default `negative_ratio` to 0.333.
+	- Changed the `alpha` parameter to `count_loss_weight` for interpretability
+	- If not provided, `count_loss_weight` will be automatically derived from training data as mean(reads_in_peaks) / n_peaks.
+	- Set `scheduler` to True by default
+	- When `scheduler` is True, use a ReduceLROnPlateau scheduler that halves the LR every 5 iterations without improvement
+	- Set default early stopping to 10
+	- Added in an optional argument for exclusion lists, where peaks and negatives overlapping them are removed
+
+bpnet
+-----
+
+	- Changed `alpha` to `count_loss_weight`
+	- Reorganized code to make the `fit` function easier to follow
+	- Added in an internal `_mixture_loss` that ensures consistency in calculating the multinomial
+	- Added in gradient clipping at a norm of 0.5
+	- Added in option (default True) to only calculate profile loss on peaks
+	- Calculate validation loss only at the end of every epoch
+	- Removes the `validation_iter` argument
+
+performance
+-----------
+
+	- Changed `calculate_performance_measures` to internally normalize logits and also to sum counts across all strands to match the model
+	
+
+io
+----
+
+	- Replaced the DataGenerator with PeakNegativeSampler
+	- PeakNegativeSampler takes in a set of peaks and separately a set of negatives and sample from these sets according to a provided ratio, rather than trying to merge the two into a single list
+	- PeakGenerator now extracts peaks and negatives separately and passes them into PeakNegativeSampler.
+	- Filters out regions based on an optionally provided exclusion list
+	- Filters out regions whose signal is larger than the 99th percentile multiplied by 1.2. This multiplication means that if the top 1st percentile is all similar, nothing is filtered out.
+
+
+
+
 
 Version 0.9.1
 =============
@@ -16,7 +64,6 @@ Highlights
 	different size than the accessibility model
 	- Add negative sampling ratio to the dataloader and BPNet training code
 	- Add optional learning rate scheduler to BPNet training
-
 
 
 
@@ -45,6 +92,7 @@ pipeline
 	peak file and FASTA file.
 
 
+
 Version 0.8.1
 ==============
 
@@ -54,6 +102,7 @@ Highlights
 	- Added robustness toward other characters in the nucleotide alphabet.
 	Anything not A, C, G, or T gets ignored. This robustness has been added to
 	PeakGenerator and the command line arguments.
+
 
 
 Version 0.8.0
@@ -73,6 +122,7 @@ Highlights
 	in the peaks to the 1st quantile of reads because it is more robust.
 
 
+
 Version 0.7.4
 ==============
 
@@ -82,6 +132,7 @@ Highlights
 	- Re-added the `attribute.py` file back in with a `deep_lift_shap` function
 	that wraps tangermeme's function but passes in the layers that must be
 	registered. 
+
 
 
 Version 0.7.3
@@ -124,6 +175,7 @@ Highlights
 ----------
 
 	- Begin inclusion of tangermeme into the backend.
+
 
 
 Version 0.7.0

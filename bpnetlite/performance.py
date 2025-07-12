@@ -384,6 +384,7 @@ def calculate_performance_measures(logps, true_counts, pred_log_counts,
 	"""
 
 	measures_ = {}
+	logps = torch.nn.functional.log_softmax(logps, dim=-1)
 
 	# Profile Performance Meausres
 	if measures is None or 'profile_mnll' in measures: 
@@ -414,7 +415,8 @@ def calculate_performance_measures(logps, true_counts, pred_log_counts,
 
 
 	# Count Performance Measures
-	true_log_counts = torch.log(true_counts.sum(dim=-1)+1)
+	true_counts = true_counts.sum(dim=(-1. -2)).unsqueeze(-1)
+	true_log_counts = torch.log(true_counts + 1)
 
 	if measures is None or 'count_pearson' in measures:
 		measures_['count_pearson'] = pearson_corr(pred_log_counts.T, 

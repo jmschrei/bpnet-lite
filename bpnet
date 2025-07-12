@@ -2,39 +2,9 @@
 # BPNet command-line tool
 # Author: Jacob Schreiber <jmschreiber91@gmail.com>
 
-import os
-os.environ['TORCH_CUDNN_V8_API_ENABLED'] = '1'
-
 import sys
-import numpy
-import torch
-import pandas
-import argparse
-import subprocess
-
-
-from bpnetlite.io import PeakGenerator
-
-from bpnetlite.bpnet import BPNet
-from bpnetlite.bpnet import CountWrapper
-from bpnetlite.bpnet import ProfileWrapper
-from bpnetlite.bpnet import ControlWrapper
-
-from bpnetlite.chrombpnet import ChromBPNet
-
-from bpnetlite.attribute import deep_lift_shap
-from bpnetlite.marginalize import marginalization_report
-
-from tangermeme.io import _interleave_loci
-from tangermeme.io import extract_loci
-from tangermeme.utils import example_to_fasta_coords
-from tangermeme.match import extract_matching_loci
-from tangermeme.seqlet import recursive_seqlets
-from tangermeme.predict import predict
-
 import json
-
-torch.backends.cudnn.benchmark = True
+import argparse
 
 
 desc = """BPNet is an neural network primarily composed of dilated residual
@@ -164,15 +134,15 @@ default_fit_parameters = {
 	'out_window': 1000,
 	'max_jitter': 128,
 	'reverse_complement': True,
+	'summits': False,
 	'max_epochs': 50,
-	'validation_iter': 100,
 	'lr': 0.001,
-	'negative_ratio': 0.1,
-	'alpha': 100,
+	'negative_ratio': 0.333,
+	'count_loss_weight': None,
 	'dtype': 'float32',
 	'device': 'cuda',
-	'scheduler': False,
-	'early_stopping': 5,
+	'scheduler': True,
+	'early_stopping': 10,
 	'verbose': False,
 
 	'min_counts': 0,
@@ -185,7 +155,8 @@ default_fit_parameters = {
 	'negatives': None,
 	'signals': None,
 	'controls': None,
-	'random_state': None
+	'random_state': None,
+	'performance_filename': 'performance.tsv'
 }
 
 
@@ -195,6 +166,7 @@ default_predict_parameters = {
 	'out_window': 1000,
 	'verbose': False,
 	'chroms': training_chroms,
+	'reverse_complement_averaging': False,
 	'device': 'cuda',
 	'dtype': 'float32',
 	'sequences': None,
@@ -204,6 +176,23 @@ default_predict_parameters = {
 	'profile_filename': 'predictions.profile.npz',
 	'counts_filename': 'predictions.counts.npz',
 	'idx_filename': 'predictions.idx.npy'
+}
+
+
+default_evaluate_parameters = {
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'verbose': False,
+	'chroms': training_chroms,
+	'reverse_complement_average': False,
+	'device': 'cuda',
+	'dtype': 'float32',
+	'sequences': None,
+	'loci': None,
+	'controls': None,
+	'model': None,
+	'performance_filename': 'performance.tsv'
 }
 
 
@@ -289,18 +278,17 @@ default_pipeline_parameters = {
 	'model': None,
 	'dtype': 'float32',
 	'device': 'cuda',
-	'early_stopping': 5,
+	'early_stopping': 10,
 
 	# Data parameters
 	'batch_size': 64,
 	'max_jitter': 128,
 	'reverse_complement': True,
 	'max_epochs': 20,
-	'validation_iter': 100,
 	'lr': 0.001,
-	'scheduler': False,
-	'negative_ratio': 0.1,
-	'alpha': 100,
+	'scheduler': True,
+	'negative_ratio': 0.333,
+	'count_loss_weight': None,
 	'verbose': True,
 	'min_counts': 0,
 	'max_counts': 99999999,
@@ -326,6 +314,8 @@ default_pipeline_parameters = {
 		'controls': None,
 		'verbose': None,
 		'random_state': None,
+		'summits': False,
+		'performance_filename': None
 	},
 
 
@@ -333,6 +323,7 @@ default_pipeline_parameters = {
 	'predict_parameters': {
 		'batch_size': 64,
 		'chroms': validation_chroms,
+		'reverse_complement_average': False,
 		'profile_filename': None,
 		'counts_filename': None,
 		'idx_filename': None,
@@ -428,9 +419,9 @@ default_pipeline_parameters = {
 }
 
 
-###
+##########
 # COMMANDS
-###
+##########
 
 
 def _extract_set(parameters, defaults, name):
@@ -472,7 +463,8 @@ def merge_parameters(parameters, default_parameters):
 		with open(parameters, "r") as infile:
 			parameters = json.load(infile)
 
-	unset_parameters = ("controls", "warning_threshold", "early_stopping")
+	unset_parameters = ("controls", "warning_threshold", "early_stopping", 
+		"count_loss_weight")
 	for parameter, value in default_parameters.items():
 		if parameter not in parameters:
 			if value is None and parameter not in unset_parameters:
@@ -493,6 +485,8 @@ args = parser.parse_args()
 
 
 if args.cmd == 'negatives':
+	from tangermeme.match import extract_matching_loci
+	
 	# Extract regions that match the GC content of the peaks
 	matched_loci = extract_matching_loci(
 		loci=args.peaks, 
@@ -526,11 +520,34 @@ if args.cmd == 'pipeline-json':
 	parameters['name'] = args.name
 	parameters['unstranded'] = args.unstranded
 	parameters['motifs'] = args.motifs
-	parameters['find_negatives'] = True
+	parameters['find_negatives'] = args.negatives is None
 	parameters['fragments'] = args.fragments
 	
 	with open(args.output, 'w') as outfile:
 		outfile.write(json.dumps(parameters, indent=4))
+	
+	sys.exit()
+
+
+##########
+# IMPORTS
+##########
+
+
+import os
+os.environ['TORCH_CUDNN_V8_API_ENABLED'] = '1'
+
+import torch
+torch.backends.cudnn.benchmark = True
+
+import numpy
+
+from bpnetlite.io import PeakGenerator
+from bpnetlite.bpnet import ControlWrapper
+
+from tangermeme.io import extract_loci
+from tangermeme.utils import example_to_fasta_coords
+from tangermeme.seqlet import recursive_seqlets
 
 
 ##########
@@ -539,14 +556,20 @@ if args.cmd == 'pipeline-json':
 
 
 if args.cmd == "fit":
+	from bpnetlite.bpnet import BPNet
+	from bpnetlite.performance import calculate_performance_measures
+	from tangermeme.predict import predict
+	
 	parameters = merge_parameters(args.parameters, default_fit_parameters)
 
 	if parameters['verbose']:
 		print("Training Chroms: ", parameters['training_chroms'])
-		print("Vaidation Chroms: ", parameters['validation_chroms'], "\n")
+		print("Vaidation Chroms: ", parameters['validation_chroms'])
+	
+		print("\nLoading peaks from: ", parameters['loci'])
+		print("Loading negatives from: ", parameters['negatives'], "\n")
 
 	###
-	parameters['summits'] = True
 
 	training_data = PeakGenerator(
 		peaks=parameters['loci'],
@@ -563,6 +586,7 @@ if args.cmd == "fit":
 		min_counts=parameters['min_counts'],
 		max_counts=parameters['max_counts'],
 		summits=parameters['summits'],
+		exclusion_lists=parameters['exclusion_lists'],
 		random_state=parameters['random_state'],
 		batch_size=parameters['batch_size'],
 		verbose=parameters['verbose']
@@ -577,10 +601,27 @@ if args.cmd == "fit":
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
 		max_jitter=0,
+		exclusion_lists=parameters['exclusion_lists'],
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
 		verbose=parameters['verbose']
 	)
-	
+
+	if parameters['verbose']:
+		print("\nTraining Set Peaks: ", training_data.dataset.peak_sequences.shape[0])
+		print("Training Set Negatives: ", training_data.dataset.negative_sequences.shape[0])
+		print("Validation Set Size: ", valid_data[0].shape[0], "\n")
+
+
+	if parameters['count_loss_weight'] is None:
+		peak_read_count = training_data.dataset.peak_signals.sum(dim=-1)
+		count_loss_weight = peak_read_count.mean(dim=(0, 1)).item()
+		parameters['count_loss_weight'] = count_loss_weight
+
+		if parameters['verbose']:
+			print("Count loss weight set to {:4.4}".format(count_loss_weight))
+			print("Negative Ratio: 1:{:4.4} pos:neg\n".format(
+				parameters['negative_ratio']))
+
 
 	if parameters['controls'] is not None:
 		valid_sequences, valid_signals, valid_controls = valid_data
@@ -598,39 +639,51 @@ if args.cmd == "fit":
 		n_control_tracks=n_control_tracks,
 		profile_output_bias=parameters['profile_output_bias'],
 		count_output_bias=parameters['count_output_bias'],
-		alpha=parameters['alpha'],
+		count_loss_weight=parameters['count_loss_weight'],
 		trimming=trimming,
 		name=parameters['name'],
 		verbose=parameters['verbose']).to(parameters['device'])
 
-	optimizer = torch.optim.AdamW(model.parameters(), lr=parameters['lr'])
-	scheduler = None
-
+	optimizer = torch.optim.Adam(model.parameters(), lr=parameters['lr'])
+	
 	if parameters['scheduler']:
-		n = len(training_data.dataset) / parameters['batch_size']
-		print(n)
-
-		scheduler1 = torch.optim.lr_scheduler.LinearLR(optimizer, 
-			start_factor=1e-4, end_factor=1.0, 
-			total_iters=n*3, last_epoch=-1, verbose=True) 
-		scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 
-			T_max=n * (parameters['max_epochs'] - 3), last_epoch=-1, verbose=True)
-		scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, 
-			[scheduler1, scheduler2], milestones=[n*3], last_epoch=-1)
-
-	if parameters['verbose']:
-		print("\nTraining Set Size: ", training_data.dataset.sequences.shape[0])
-		print("Validation Set Size: ", valid_sequences.shape[0], "\n")
-
+		scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5,
+			patience=5, threshold=0.0001, min_lr=0.0001)
+	else:
+		scheduler = None
+        
 	model.fit(training_data, optimizer, scheduler,
 		X_valid=valid_sequences, 
 		X_ctl_valid=valid_controls, y_valid=valid_signals, 
-		max_epochs=parameters['max_epochs'], 
-		validation_iter=parameters['validation_iter'], 
+		max_epochs=parameters['max_epochs'],
 		batch_size=parameters['batch_size'],
 		early_stopping=parameters['early_stopping'],
 		dtype=parameters['dtype'],
 		device=parameters['device'])
+	
+	
+	### Evaluate Model
+	
+	measure_names = ['profile_mnll', 'profile_jsd', 'profile_pearson', 
+		'profile_spearman', 'count_pearson', 'count_spearman', 'count_mse']
+	
+	y_hat_logits, y_hat_logcounts = predict(model, valid_data[0],
+		args=None if len(valid_data) == 2 else (valid_data[2],),
+		batch_size = parameters['batch_size'],
+		dtype=parameters['dtype'],
+		device=parameters['device'],
+		verbose=parameters['verbose']
+	)
+	
+	y_hat_logits = torch.nn.functional.log_softmax(y_hat_logits, dim=-1)
+
+	measures = calculate_performance_measures(y_hat_logits, valid_data[1], 
+		y_hat_logcounts, smooth_true=True)
+
+	with open(parameters['performance_filename'], "w") as outfile:
+		outfile.write("\t".join(measure_names))
+		outfile.write("\n")
+		outfile.write("\t".join([str(measures[name].mean().item()) for name in measure_names]))
 
 
 ##########
@@ -639,6 +692,7 @@ if args.cmd == "fit":
 
 
 elif args.cmd == 'predict':
+	from tangermeme.predict import predict
 	parameters = merge_parameters(args.parameters, default_predict_parameters)
 
 	###
@@ -655,7 +709,7 @@ elif args.cmd == 'predict':
 		out_window=parameters['out_window'],
 		max_jitter=0,
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
-		return_filtered=True,
+		return_mask=True,
 		verbose=parameters['verbose']
 	)
 
@@ -671,13 +725,83 @@ elif args.cmd == 'predict':
 	if X_ctl is not None:
 		X_ctl = (X_ctl,)
 
-	y_profiles, y_counts = predict(model, X, args=X_ctl, 
+	y_profile, y_counts = predict(model, X, args=X_ctl, 
 		batch_size=parameters['batch_size'], device=parameters['device'], 
 		dtype=parameters['dtype'], verbose=parameters['verbose'])
 
-	numpy.savez_compressed(parameters['profile_filename'], y_profiles)
+	if parameters['reverse_complement_average']:
+		X_rc = torch.flip(X, dims=(-1, -2))
+		X_ctl_rc = None if X_ctl is None else (torch.flip(X_ctl[0], dims=(-1, -2)),)
+	
+		y_profile_rc, y_counts_rc = predict(model, X_rc, args=X_ctl_rc, 
+			batch_size=parameters['batch_size'], device=parameters['device'], 
+			dtype=parameters['dtype'], verbose=parameters['verbose'])
+		
+		y_profile_rc = torch.flip(y_profile_rc, dims=(-1, -2))
+		
+		y_profile = (y_profile + y_profile_rc) / 2
+		y_counts = (y_counts + y_counts_rc) / 2
+
+	numpy.savez_compressed(parameters['profile_filename'], y_profile)
 	numpy.savez_compressed(parameters['counts_filename'], y_counts)
-	numpy.save(parameters['idx_filename'], idxs)
+	numpy.savez_compressed(parameters['idx_filename'], idxs)
+
+
+##########
+# EVALUATE
+##########
+
+
+elif args.cmd == 'evaluate':
+	parameters = merge_parameters(args.parameters, default_evaluate_parameters)
+	measure_names = ['profile_mnll', 'profile_jsd', 'profile_pearson', 
+		'profile_spearman', 'count_pearson', 'count_spearman', 'count_mse']
+	
+	###
+
+	predict_parameters = parameters.copy()
+	predict_parameters['profile_filename'] = '.eval.profile.npz'
+	predict_parameters['counts_filename'] = '.eval.counts.npz'
+	predict_parameters['idx_filename'] = '.eval.idx.npz'
+
+	with open(".bpnet.evaluate.predict.json", "w") as outfile:
+		outfile.write(json.dumps(predict_parameters, sort_keys=True, indent=4))
+
+	os.system("bpnet predict -p .bpnet.evaluate.predict.json")
+
+	y_hat_logits = numpy.load('.eval.profile.npz')['arr_0']
+	y_hat_logits = torch.from_numpy(y_hat_logits)
+	y_hat_logits = torch.nn.log_softmax(y_hat_logits, dim=-1)
+
+	y_hat_counts = numpy.load('.eval.counts.npz')['arr_0']
+	y_hat_counts = torch.from_numpy(y_hat_counts)
+
+	y_hat_idxs = numpy.load('.eval.idx.npz')['arr_0']
+	y_hat_idxs = torch.from_numpy(y_hat_idxs)
+
+	os.system("rm .eval.*.npz")
+
+	_, y = extract_loci(
+		sequences=parameters['sequences'],
+		signals=parameters['signals'],
+		loci=parameters['loci'],
+		chroms=parameters['chroms'],
+		in_window=parameters['in_window'],
+		out_window=parameters['out_window'],
+		max_jitter=0,
+		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
+		verbose=parameters['verbose']
+	)
+
+	y = y[y_hat_idxs]
+
+	measures = calculate_performance_measures(y_lite_logits, y_true_profiles, 
+		y_lite_logcounts, smooth_true=parameters['smooth_true'])
+
+	with open(parameters['measures_filename'], "w") as outfile:
+		outfile.write("\t".join(meausure_names))
+		outfile.write("\n")
+		outfile.write("\t".join([measures[name] for name in measure_names]))
 
 
 ##########
@@ -686,6 +810,11 @@ elif args.cmd == 'predict':
 
 
 elif args.cmd == 'attribute':
+	from bpnetlite.bpnet import CountWrapper
+	from bpnetlite.bpnet import ProfileWrapper
+	from bpnetlite.chrombpnet import ChromBPNet
+	from bpnetlite.attribute import deep_lift_shap
+
 	parameters = merge_parameters(args.parameters, default_attribute_parameters)
 
 	###
@@ -703,7 +832,7 @@ elif args.cmd == 'attribute':
 		chroms=parameters['chroms'],
 		max_jitter=0,
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
-		return_filtered=True,
+		return_mask=True,
 		verbose=parameters['verbose']
 	)
 
@@ -740,6 +869,8 @@ elif args.cmd == 'attribute':
 
 
 elif args.cmd == 'seqlets':
+	from tangermeme.io import _interleave_loci
+
 	parameters = merge_parameters(args.parameters, default_seqlet_parameters)
 
 	###
@@ -775,6 +906,8 @@ elif args.cmd == 'seqlets':
 
 
 elif args.cmd == 'marginalize':
+	from bpnetlite.marginalize import marginalization_report
+
 	parameters = merge_parameters(args.parameters, 
 		default_marginalize_parameters)
 
@@ -817,6 +950,9 @@ elif args.cmd == 'marginalize':
 
 
 elif args.cmd == 'pipeline':
+	import pandas
+	import subprocess
+	
 	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
 	pname = parameters['name']
 
@@ -853,6 +989,7 @@ elif args.cmd == 'pipeline':
 			parameters['signals'] = [pname + ".bw"]
 		else:
 			parameters['signals'] = [pname + ".+.bw", pname + ".-.bw"]
+
 
 	if parameters['controls'] is not None:
 		if parameters['controls'][0].endswith(ftypes):
@@ -916,6 +1053,7 @@ elif args.cmd == 'pipeline':
 	if parameters.get('model', None) == None:
 		name = pname + '.bpnet.fit.json'
 		parameters['model'] = pname + '.torch'
+		_check_set(fit_parameters, 'performance_filename', pname + '.performance.tsv')
 
 		with open(name, 'w') as outfile:
 			outfile.write(json.dumps(fit_parameters, sort_keys=True, indent=4))
