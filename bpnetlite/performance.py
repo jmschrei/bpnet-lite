@@ -201,6 +201,7 @@ def jensen_shannon_distance(logps, true_counts):
 
 	probs2_sum = torch.sum(true_counts, dim=-1, keepdims=True)
 	probs2 = torch.divide(true_counts, probs2_sum, out=torch.zeros_like(true_counts))
+	probs2 = probs2.type(probs1.dtype)
 
 	mid = 0.5 * (probs1 + probs2)
 	return 0.5 * (_kl_divergence(probs1, mid) + _kl_divergence(probs2, mid))
@@ -415,7 +416,7 @@ def calculate_performance_measures(logps, true_counts, pred_log_counts,
 
 
 	# Count Performance Measures
-	true_counts = true_counts.sum(dim=(-1. -2)).unsqueeze(-1)
+	true_counts = true_counts.sum(dim=(-1, -2)).unsqueeze(-1)
 	true_log_counts = torch.log(true_counts + 1)
 
 	if measures is None or 'count_pearson' in measures:

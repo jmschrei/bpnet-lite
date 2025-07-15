@@ -28,6 +28,9 @@ class PeakNegativeSampler(torch.utils.data.Dataset):
 	
 	In the documentation below, `mj` = max_jitter.
 	
+	Note that, although the data is passed in as PyTorch tensors, they are saved
+	as numpy arrays for faster slicing during training.
+	
 	
 	Parameters
 	----------
@@ -86,14 +89,14 @@ class PeakNegativeSampler(torch.utils.data.Dataset):
 		negative_signals, peak_controls=None, negative_controls=None, 
 		negative_ratio=0.1, in_window=2114, out_window=1000, max_jitter=0, 
 		reverse_complement=False, shuffle=True, random_state=None):
-		self.peak_sequences = peak_sequences
-		self.peak_signals = peak_signals
-		self.peak_controls = peak_controls
+		self.peak_sequences = peak_sequences.numpy(force=True)
+		self.peak_signals = peak_signals.numpy(force=True)
+		self.peak_controls = peak_controls.numpy(force=True)
 		self.n_peaks = len(self.peak_sequences)
 		
-		self.negative_sequences = negative_sequences
-		self.negative_signals = negative_signals
-		self.negative_controls = negative_controls
+		self.negative_sequences = negative_sequences.numpy(force=True)
+		self.negative_signals = negative_signals.numpy(force=True)
+		self.negative_controls = negative_controls.numpy(force=True)
 		self.n_negatives = len(self.negative_sequences)
 
 		self.negative_ratio = negative_ratio
@@ -131,26 +134,28 @@ class PeakNegativeSampler(torch.utils.data.Dataset):
 			idx = self.random_state.randint(self.n_negatives)
 			jitter = 0
 			label = 0
-			
+
 			X, y, X_ctl = (self.negative_sequences, self.negative_signals, 
 				self.negative_controls)
 
 
-		Xi = X[idx][:, jitter:jitter+self.in_window]
-		yi = y[idx][:, jitter:jitter+self.out_window]
+		Xi = torch.from_numpy(X[idx][:, jitter:jitter+self.in_window])
+		yi = torch.from_numpy(y[idx][:, jitter:jitter+self.out_window])
 		if self.peak_controls is not None:
-			Xi_ctl = X_ctl[idx][:, jitter:jitter+self.in_window]
+			Xi_ctl = torch.from_numpy(X_ctl[idx][:, jitter:jitter+self.in_window])
 
 
 		if self.reverse_complement and self.random_state.randint(2) == 1:
 			Xi = torch.flip(Xi, [0, 1])
 			yi = torch.flip(yi, [0, 1])
-
+			
 			if self.peak_controls is not None:
 				Xi_ctl = torch.flip(Xi_ctl, [0, 1])
 
+
 		if self.peak_controls is not None:
 			return Xi, Xi_ctl, yi, label
+		
 		return Xi, yi, label
 
 

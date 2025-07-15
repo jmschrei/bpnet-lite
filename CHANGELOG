@@ -2,6 +2,29 @@
 Release History
 ===============
 
+
+Version 0.9.3
+=============
+
+bpnet cmd
+---------
+
+	- Made the `bpnet evaluate` command more robust
+
+
+performance
+-----------
+
+	- Fixed a minor bug with count loss shapes
+	- Fixed an issue with dtypes not being correctly assigned in _kl_divergence
+
+io
+----
+
+	- Keep the data as numpy arrays for faster slicing 
+
+
+
 Version 0.9.2
 =============
 

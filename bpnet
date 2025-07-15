@@ -14,8 +14,8 @@ desc = """BPNet is an neural network primarily composed of dilated residual
 	files for the signal to predict and the control signal, and train a
 	BPNet model for you."""
 
-_help = """Must be either 'negatives', 'fit', 'predict', 'attribute',
-	'seqlets', 'marginalize', or 'pipeline'."""
+_help = """Must be either 'negatives', 'fit', 'predict', 'evaluate', 
+	'attribute', 'seqlets', 'marginalize', or 'pipeline'."""
 
 
 # Read in the arguments
@@ -85,6 +85,13 @@ predict_parser.add_argument("-p", "--parameters", type=str, required=True,
 
 #
 
+predict_parser = subparsers.add_parser("evaluate", 
+	help="Evaluate a trained BPNet model.")
+predict_parser.add_argument("-p", "--parameters", type=str, required=True,
+	help="A JSON file containing the parameters for making predictions.")
+
+#
+
 attribute_parser = subparsers.add_parser("attribute", 
 	help="Calculate attributions using a trained BPNet model.")
 attribute_parser.add_argument("-p", "--parameters", type=str, required=True,
@@ -134,6 +141,7 @@ default_fit_parameters = {
 	'out_window': 1000,
 	'max_jitter': 128,
 	'reverse_complement': True,
+	'reverse_complement_average': True,
 	'summits': False,
 	'max_epochs': 50,
 	'lr': 0.001,
@@ -284,6 +292,7 @@ default_pipeline_parameters = {
 	'batch_size': 64,
 	'max_jitter': 128,
 	'reverse_complement': True,
+	'reverse_complement_average': True,
 	'max_epochs': 20,
 	'lr': 0.001,
 	'scheduler': True,
@@ -557,8 +566,6 @@ from tangermeme.seqlet import recursive_seqlets
 
 if args.cmd == "fit":
 	from bpnetlite.bpnet import BPNet
-	from bpnetlite.performance import calculate_performance_measures
-	from tangermeme.predict import predict
 	
 	parameters = merge_parameters(args.parameters, default_fit_parameters)
 
@@ -613,8 +620,8 @@ if args.cmd == "fit":
 
 
 	if parameters['count_loss_weight'] is None:
-		peak_read_count = training_data.dataset.peak_signals.sum(dim=-1)
-		count_loss_weight = peak_read_count.mean(dim=(0, 1)).item()
+		peak_read_count = training_data.dataset.peak_signals.sum(axis=-1)
+		count_loss_weight = peak_read_count.mean(axis=(0, 1)).item()
 		parameters['count_loss_weight'] = count_loss_weight
 
 		if parameters['verbose']:
@@ -664,26 +671,19 @@ if args.cmd == "fit":
 	
 	### Evaluate Model
 	
-	measure_names = ['profile_mnll', 'profile_jsd', 'profile_pearson', 
-		'profile_spearman', 'count_pearson', 'count_spearman', 'count_mse']
+	evaluate_parameters = parameters.copy()
+	evaluate_parameters['chroms'] = parameters['validation_chroms']
+	evaluate_parameters['max_jitter'] = 0
+	evaluate_parameters['reverse_complement'] = False
+	evaluate_parameters['model'] = parameters['name'] + '.torch'
+	evaluate_parameters['performance_filename'] = (parameters['name'] + 
+		'.performance.tsv')
 	
-	y_hat_logits, y_hat_logcounts = predict(model, valid_data[0],
-		args=None if len(valid_data) == 2 else (valid_data[2],),
-		batch_size = parameters['batch_size'],
-		dtype=parameters['dtype'],
-		device=parameters['device'],
-		verbose=parameters['verbose']
-	)
+	fname = "{}.evaluate.json".format(parameters['name'])
+	with open(fname, "w") as outfile:
+		outfile.write(json.dumps(evaluate_parameters, sort_keys=True, indent=4))
 	
-	y_hat_logits = torch.nn.functional.log_softmax(y_hat_logits, dim=-1)
-
-	measures = calculate_performance_measures(y_hat_logits, valid_data[1], 
-		y_hat_logcounts, smooth_true=True)
-
-	with open(parameters['performance_filename'], "w") as outfile:
-		outfile.write("\t".join(measure_names))
-		outfile.write("\n")
-		outfile.write("\t".join([str(measures[name].mean().item()) for name in measure_names]))
+	os.system("bpnet evaluate -p {}".format(fname))
 
 
 ##########
@@ -707,6 +707,7 @@ elif args.cmd == 'predict':
 		chroms=parameters['chroms'],
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
+		exclusion_lists=parameters['exclusion_lists'],
 		max_jitter=0,
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
 		return_mask=True,
@@ -753,33 +754,32 @@ elif args.cmd == 'predict':
 
 
 elif args.cmd == 'evaluate':
+	from bpnetlite.performance import calculate_performance_measures
+
 	parameters = merge_parameters(args.parameters, default_evaluate_parameters)
 	measure_names = ['profile_mnll', 'profile_jsd', 'profile_pearson', 
 		'profile_spearman', 'count_pearson', 'count_spearman', 'count_mse']
-	
+
 	###
 
+	name = parameters['name']
 	predict_parameters = parameters.copy()
-	predict_parameters['profile_filename'] = '.eval.profile.npz'
-	predict_parameters['counts_filename'] = '.eval.counts.npz'
-	predict_parameters['idx_filename'] = '.eval.idx.npz'
+	predict_parameters['profile_filename'] = '{}.eval.profile.npz'.format(name)
+	predict_parameters['counts_filename'] = '{}.eval.counts.npz'.format(name)
+	predict_parameters['idx_filename'] = '{}.eval.idx.npz'.format(name)
 
-	with open(".bpnet.evaluate.predict.json", "w") as outfile:
+	with open("{}.bpnet.evaluate.predict.json".format(name), "w") as outfile:
 		outfile.write(json.dumps(predict_parameters, sort_keys=True, indent=4))
 
-	os.system("bpnet predict -p .bpnet.evaluate.predict.json")
+	os.system("bpnet predict -p {}.bpnet.evaluate.predict.json".format(name))
 
-	y_hat_logits = numpy.load('.eval.profile.npz')['arr_0']
+	y_hat_logits = numpy.load('{}.eval.profile.npz'.format(name))['arr_0']
 	y_hat_logits = torch.from_numpy(y_hat_logits)
-	y_hat_logits = torch.nn.log_softmax(y_hat_logits, dim=-1)
 
-	y_hat_counts = numpy.load('.eval.counts.npz')['arr_0']
-	y_hat_counts = torch.from_numpy(y_hat_counts)
+	y_hat_logcounts = numpy.load('{}.eval.counts.npz'.format(name))['arr_0']
+	y_hat_logcounts = torch.from_numpy(y_hat_logcounts)
 
-	y_hat_idxs = numpy.load('.eval.idx.npz')['arr_0']
-	y_hat_idxs = torch.from_numpy(y_hat_idxs)
-
-	os.system("rm .eval.*.npz")
+	os.system("rm {}.eval.*.npz".format(name))
 
 	_, y = extract_loci(
 		sequences=parameters['sequences'],
@@ -788,20 +788,20 @@ elif args.cmd == 'evaluate':
 		chroms=parameters['chroms'],
 		in_window=parameters['in_window'],
 		out_window=parameters['out_window'],
+		exclusion_lists=parameters['exclusion_lists'],
 		max_jitter=0,
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
 		verbose=parameters['verbose']
 	)
 
-	y = y[y_hat_idxs]
+	measures = calculate_performance_measures(y_hat_logits, y, 
+		y_hat_logcounts, smooth_true=True)
 
-	measures = calculate_performance_measures(y_lite_logits, y_true_profiles, 
-		y_lite_logcounts, smooth_true=parameters['smooth_true'])
-
-	with open(parameters['measures_filename'], "w") as outfile:
-		outfile.write("\t".join(meausure_names))
+	with open(parameters['performance_filename'], "w") as outfile:
+		outfile.write("\t".join(measure_names))
 		outfile.write("\n")
-		outfile.write("\t".join([measures[name] for name in measure_names]))
+		outfile.write("\t".join([str(measures[name].mean().item()) 
+			for name in measure_names]))
 
 
 ##########

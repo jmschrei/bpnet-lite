@@ -3,6 +3,7 @@
    "in_window":2114,
    "out_window":1000,
    "verbose":true,
+   "reverse_complement_average": true,
    "device":"cuda",
    "dtype":"float32",
    "chroms":["chr8", "chr10"],
