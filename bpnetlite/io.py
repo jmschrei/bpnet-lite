@@ -113,7 +113,7 @@ class PeakNegativeSampler(torch.utils.data.Dataset):
 		self.peak_ordering = None
 
 	def __len__(self):
-		return self.n_peaks + int(self.n_negatives * self.negative_ratio)
+		return self.n_peaks + int(self.n_peaks * self.negative_ratio)
 
 	def __getitem__(self, idx):
 		if idx == 0:
