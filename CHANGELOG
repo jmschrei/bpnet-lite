@@ -2,6 +2,14 @@
 Release History
 ===============
 
+Version 0.9.4
+=============
+
+io
+=====
+
+	- Fixed a small bug in the calculation of epoch length. Thanks @amanpatel101
+
 
 Version 0.9.3
 =============

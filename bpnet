@@ -655,7 +655,7 @@ if args.cmd == "fit":
 	
 	if parameters['scheduler']:
 		scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5,
-			patience=5, threshold=0.0001, min_lr=0.0001)
+			patience=3, threshold=0.0001, min_lr=0.0001)
 	else:
 		scheduler = None
         

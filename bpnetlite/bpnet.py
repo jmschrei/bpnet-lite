@@ -415,7 +415,7 @@ class BPNet(torch.nn.Module):
 
 					loss.backward()
 					
-					torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+					#torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
 					optimizer.step()
 
 				iteration += 1
