@@ -160,6 +160,7 @@ default_fit_parameters = {
 	'validation_chroms': validation_chroms,
 	'sequences': None,
 	'loci': None,
+	'exclusion_lists': None,
 	'negatives': None,
 	'signals': None,
 	'controls': None,
@@ -177,6 +178,7 @@ default_predict_parameters = {
 	'reverse_complement_averaging': False,
 	'device': 'cuda',
 	'dtype': 'float32',
+	'exclusion_lists': None,
 	'sequences': None,
 	'loci': None,
 	'controls': None,
@@ -196,6 +198,7 @@ default_evaluate_parameters = {
 	'reverse_complement_average': False,
 	'device': 'cuda',
 	'dtype': 'float32',
+	'exclusion_lists': None,
 	'sequences': None,
 	'loci': None,
 	'controls': None,
@@ -210,6 +213,7 @@ default_attribute_parameters = {
 	'out_window': 1000,
 	'verbose': False,
 	'chroms': training_chroms,
+	'exclusion_lists': None,
 	'sequences': None,
 	'loci': None,
 	'model': None,
@@ -231,6 +235,7 @@ default_seqlet_parameters = {
 	'additional_flanks': 3,
 	'in_window': 2114,
 	'chroms': training_chroms,
+	'exclusion_lists': None,
 	'verbose': False,
 	'loci': None,
 	'ohe_filename': None,
@@ -260,6 +265,7 @@ default_marginalize_parameters = {
 	'out_window': 1000,
 	'verbose': False,
 	'chroms': training_chroms,
+	'exclusion_lists': None,
 	'sequences': None,
 	'motifs': None,
 	'loci': None,
@@ -303,6 +309,7 @@ default_pipeline_parameters = {
 	'max_counts': 99999999,
 	'random_state': None,
 
+	'exclusion_lists': None,
 	'sequences': None,
 	'loci': None,
 	'signals': None,
@@ -473,7 +480,7 @@ def merge_parameters(parameters, default_parameters):
 			parameters = json.load(infile)
 
 	unset_parameters = ("controls", "warning_threshold", "early_stopping", 
-		"count_loss_weight")
+		"count_loss_weight", "exclusion_lists")
 	for parameter, value in default_parameters.items():
 		if parameter not in parameters:
 			if value is None and parameter not in unset_parameters:
@@ -655,7 +662,7 @@ if args.cmd == "fit":
 	
 	if parameters['scheduler']:
 		scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5,
-			patience=3, threshold=0.0001, min_lr=0.0001)
+			patience=5, threshold=0.0001, min_lr=0.0001)
 	else:
 		scheduler = None
         
