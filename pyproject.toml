@@ -35,8 +35,8 @@ Homepage = "https://github.com/jmschrei/bpnet-lite"
 Repository = "https://github.com/jmschrei/bpnet-lite"
 
 [project.scripts]
-bpnet = "bpnet:main"
-chrombpnet = "chrombpnet:main"
+bpnet = "bpnetlite.cli.bpnet:main"
+chrombpnet = "bpnetlite.cli.chrombpnet:main"
 
 [tool.hatch.build]
-packages = ["bpnetlite"]
+packages = ["src/bpnetlite"]
