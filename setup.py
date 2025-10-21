@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='bpnet-lite',
-    version='0.9.4',
+    version='0.9.5',
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
     packages=['bpnetlite'],
