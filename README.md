@@ -53,7 +53,7 @@ Although these models achieve high predictive accuracy, their main purpose is to
 bpnet-lite comes with a command-line tool, `bpnet`, that supports the steps necessary for training and using BPNet models. The fastest way to go from your raw data to results is to use the `bpnet pipeline-json` command followed by the `bpnet pipeline` command. 
 
 ```
-bpnet pipeline-json -s hg38.fa -l my.bed.gz -i input1.bam -i input2.bam -c control1.bam -c control2.bam -n test -o pipeline.json -m JASPAR_2024.meme
+bpnet pipeline-json -s hg38.fa -p peaks.bed.gz -i input1.bam -i input2.bam -c control1.bam -c control2.bam -n test -o pipeline.json -m JASPAR_2024.meme
 bpnet pipeline -p pipeline.json
 ```
 
