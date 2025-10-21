@@ -91,13 +91,18 @@ class PeakNegativeSampler(torch.utils.data.Dataset):
 		reverse_complement=False, shuffle=True, random_state=None):
 		self.peak_sequences = peak_sequences.numpy(force=True)
 		self.peak_signals = peak_signals.numpy(force=True)
-		self.peak_controls = peak_controls.numpy(force=True)
 		self.n_peaks = len(self.peak_sequences)
 		
 		self.negative_sequences = negative_sequences.numpy(force=True)
 		self.negative_signals = negative_signals.numpy(force=True)
-		self.negative_controls = negative_controls.numpy(force=True)
 		self.n_negatives = len(self.negative_sequences)
+
+		if peak_controls is not None:
+			self.peak_controls = peak_controls.numpy(force=True)
+			self.negative_controls = negative_controls.numpy(force=True)
+		else:
+			self.peak_controls = None
+			self.negative_controls = None
 
 		self.negative_ratio = negative_ratio
 		self.negative_likelihood = 1 / (1 + 1 / negative_ratio)
@@ -370,6 +375,7 @@ def PeakGenerator(peaks, negatives, sequences, signals, controls=None,
 	
 	verbose: bool, optional
 		Whether to display a progress bar while loading. Default is False.
+
 
 	Returns
 	-------
