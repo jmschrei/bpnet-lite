@@ -1,0 +1,140 @@
+{
+    "n_filters": 16,
+    "n_layers": 8,
+    "profile_output_bias": true,
+    "count_output_bias": true,
+    "in_window": 2114,
+    "out_window": 1000,
+    "name": "test",
+    "model": null,
+    "dtype": "float32",
+    "device": "cpu",
+    "early_stopping": 10,
+    "batch_size": 64,
+    "max_jitter": 128,
+    "reverse_complement": true,
+    "reverse_complement_average": true,
+    "max_epochs": 20,
+    "lr": 0.001,
+    "scheduler": true,
+    "negative_ratio": 0.333,
+    "count_loss_weight": null,
+    "verbose": true,
+    "min_counts": 0,
+    "max_counts": 99999999,
+    "random_state": null,
+    "exclusion_lists": null,
+    "sequences": "chr21_22.fa",
+    "loci": [
+        "ENCSR000AKO_100.bed"
+    ],
+    "signals": [
+        "../../examples/ENCSR000AKO_plus.bigWig",
+        "../../examples/ENCSR000AKO_minus.bigWig"
+    ],
+    "controls": null,
+    "find_negatives": true,
+    "unstranded": false,
+    "fragments": false,
+    "fit_parameters": {
+        "batch_size": 64,
+        "training_chroms": [
+            "chr21"
+        ],
+        "validation_chroms": [
+            "chr22"
+        ],
+        "sequences": null,
+        "loci": null,
+        "signals": null,
+        "controls": null,
+        "verbose": null,
+        "random_state": null,
+        "summits": false,
+        "performance_filename": null
+    },
+    "predict_parameters": {
+        "batch_size": 64,
+        "chroms": [
+            "chr22"
+        ],
+        "reverse_complement_average": false,
+        "profile_filename": null,
+        "counts_filename": null,
+        "idx_filename": null,
+        "sequences": null,
+        "loci": null,
+        "signals": null,
+        "controls": null,
+        "dtype": null,
+        "device": null,
+        "verbose": null
+    },
+    "attribute_parameters": {
+        "batch_size": 64,
+        "chroms": [
+            "chr22"
+        ],
+        "output": "counts",
+        "loci": null,
+        "device": null,
+        "ohe_filename": null,
+        "attr_filename": null,
+        "idx_filename": null,
+        "n_shuffles": 20,
+        "warning_threshold": 0.001,
+        "random_state": null,
+        "verbose": null
+    },
+    "seqlet_parameters": {
+        "threshold": 0.01,
+        "min_seqlet_len": 4,
+        "max_seqlet_len": 25,
+        "additional_flanks": 3,
+        "in_window": null,
+        "chroms": null,
+        "verbose": null,
+        "loci": null,
+        "ohe_filename": null,
+        "attr_filename": null,
+        "idx_filename": null,
+        "output_filename": null
+    },
+    "annotation_parameters": {
+        "motifs": null,
+        "sequences": null,
+        "seqlet_filename": null,
+        "n_score_bins": 100,
+        "n_median_bins": 1000,
+        "n_target_bins": 100,
+        "n_cache": 250,
+        "reverse_complement": true,
+        "n_jobs": -1,
+        "output_filename": null
+    },
+    "modisco_motifs_parameters": {
+        "n_seqlets": 100000,
+        "output_filename": null,
+        "verbose": null
+    },
+    "modisco_report_parameters": {
+        "motifs": null,
+        "output_folder": null,
+        "verbose": null
+    },
+    "marginalize_parameters": {
+        "loci": null,
+        "n_loci": 100,
+        "attributions": false,
+        "batch_size": 64,
+        "shuffle": false,
+        "random_state": null,
+        "output_folder": null,
+        "motifs": null,
+        "minimal": true,
+        "device": null,
+        "verbose": null
+    },
+    "negatives": null,
+    "motifs": "motif_pfms.meme"
+}
