@@ -26,3 +26,5 @@ Thumbs.db
 tmp/
 notebooks/.ipynb_checkpoints
 .vscode
+tests/smoke/test*
+tests/smoke/chr2*
