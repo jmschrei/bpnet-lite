@@ -49,87 +49,63 @@ bpnet pipeline -p pipeline.json
 When running the pipeline, a JSON is produced for each one of the steps (except for running TF-MoDISco and annotating the seqlets, which uses `ttl`). Each of these JSON can be run by themselves using the appropriate built-in command. Because some of the values in the JSONs for these steps are set programmatically when running the file pipeline, e.g., the filenames to read in and save to, being able to inspect every one of the JSONs can be handy for debugging.
 
 
+### BPNet Python API
+
+BPNet models trained using the pipeline described above are saved in the standard PyTorch format. This means that loading them in Python is quite simple. Because the pipeline above used the name "test", there will be a model named "test.torch" which is the best performing model on the validation data. We can load it into Python as follows:
+
+```python
+import torch
+
+toy_model = torch.load("test.torch", weights_only=False)
+```
+
+This is now a PyTorch model that can be used exactly the same way as any other model.
+
 ## ChromBPNet
 
 ![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/e6f9bbdf-f107-4b3e-8b97-dc552af2239c)
 
 > [!Warning]
-> Several users have reported that the performance of ChromBPNet models trained using bpnet-lite significantly underperforms those trained using the official ChromBPNet repo. We are currently looking into this. Until we resolve the differences, please consider using the official repository for training your ChromBPNet models and then bpnet-lite for loading them into PyTorch.
+> Several users have reported that the performance of ChromBPNet models trained using bpnet-lite underperforms those trained using the official ChromBPNet repo. We are currently looking into this. Until we resolve the differences, please consider using the official repository for training your ChromBPNet models and then bpnet-lite for loading them into PyTorch. We have removed the chrombpnet command-line tool for training ChromBPNet models for now.
 
-ChromBPNet extends the original modeling framework to DNase-seq and ATAC-seq experiments. A separate framework is necessary because the cutting enzymes used in these experiments, particularly the hyperactive Tn5 enzyme used in ATAC-seq experiments, have soft sequences preferences that can distort the observed readouts. Hence, it becomes necessary to train a small BPNet model to explicitly capture this soft sequence (the "bias model") bias before subsequently training a second BPNet model jointly with the frozen bias model to capture the true drivers of accessibility (the "accessibiity model"). Together, these models and the manner in which their predictions are combined are referred to as ChromBPNet. 
+ChromBPNet extends the original basepair-resolution modeling framework of BPNet to DNase-seq and ATAC-seq experiments. In these experiments, a more involved framework is necessary because the cutting enzymes themselves have a soft sequence preference that can distort the observed readouts. This means that if you care about the true basepair resolution shape of the profiles, e.g. you want to look at footprinting, you need to adjust the positioning of the reads by removing this bias. This is done in ChromBPNet through the initial training of a smaller BPNet model on background regions where the sequence bias is still present (the "bias model"), followed by freezing it and training a second larger model (the "accessibility model"), to predict the residual between the observed readouts in peaks and the predictions from the bias model. Together, the bias and accessibility models form a "ChromBPNet" model. Usually, the bias model is discarded after training the accessibility model, whose readouts can be viewed as de-biased versions of the experiments.
 
-Generally, one can perform the same analyses using ChromBPNet as one can using BPNet. However, an important note is that the full ChromBPNet model faithfully represents the experimental readout -- bias and all -- and so for more inspection tasks, e.g. variant effect prediction and interpretation, one should use only the accessibility model. Because the accessibiity model itself is conceptually, and also literally implemented as, a BPNet model, one can run the same procedure and use the BPNet command-line tool using it.
+Generally, one can perform the same analyses using ChromBPNet as one can using BPNet. This is because the accessibility model *is* a BPNet model and most analyses, such as feature attributions or design, mostly care about the de-noised predictions. However, an important note is that the full ChromBPNet model faithfully represents the experimental readout -- bias and all -- and so for more inspection tasks, e.g. variant effect prediction and interpretation, one should use only the accessibility model. Because the accessibiity model itself is conceptually, and also literally implemented as, a BPNet model, one can run the same procedure and use the BPNet command-line tool using it.
 
-###
 
-bpnet-lite comes with a second command-line tool, `chrombpnet`, that supports the steps necessary for training and using ChromBPNet models. These commands are used exactly the same way as the `bpnet` command-line tool with only minor changes to the parameters in the JSON. Note that the `predict`, `attribute` and `marginalize` commands will internally run their `bpnet` counterparts, but are still provided for convenience.
+#### ChromBPNet Python API
 
+Depending on the format of your ChromBPNet models, there are several ways that one could load them into Python for subsequent analyses. See the tutorial on loading models for more detail. Here is an example of loading a ChromBPNet model directly from a h5 downloaded from the ENCODE Portal.
+
+```python
+import tarfile
+
+from io import BytesIO
+from bpnetlite.chrombpnet import ChromBPNet
+
+with tarfile.open("ENCFF142IOR.tar.gz", "r:gz") as tar:
+    bias_tar = tar.extractfile("./fold_0/model.bias_scaled.fold_0.ENCSR637XSC.h5").read()
+    accessibility_tar = tar.extractfile("./fold_0/model.chrombpnet_nobias.fold_0.ENCSR637XSC.h5").read()
+
+chrombpnet = ChromBPNet.from_chrombpnet(
+    BytesIO(bias_tar),
+    BytesIO(accessibility_tar)
+)
+
+chrombpnet
 ```
-chrombpnet fit -p chrombpnet_fit_example.json
-chrombpnet predict -p chrombpnet_predict_example.json
-chrombpnet attribute -p chrombpnet_attribute_example.json
-chrombpnet marginalize -p chrombpnet_marginalize_example.json
-```
 
-Similarly to `bpnet`, one can run the entire pipeline of commands specified above in addition to also running TF-MoDISco and generating a report on the found motifs. Unlike `bpnet`, this command will run each of those steps for (1) the full ChromBPNet model, (2) the accessibility model alone, and (3) the bias model. 
-
-```
-chrombpnet pipeline -p chrombpnet_pipeline_example.json
-```
-
-## Python API
-
-> [!Warning]
-> This is no longer accurate as of v0.9.2 with the switch to the PeakNegativeSampler. I will update soon.
-
-If you'd rather train and use BPNet/ChromBPNet models programmatically, you can use the Python API. The command-line tool is made up of wrappers around these methods and functions, so please take a look if you'd like additional documentation on how to get started.
-
-The first step is loading data. Much like with the command-line tool, if you're using the built-in data loader then you need to specify where the FASTA containing sequences, a BED file containing loci and bigwig files to train on are. The signals need to be provided in a list and the index of each bigwig in the list will correspond to a model output. Optionally, you can also provide control bigwigs. See the BPNet paper for how these control bigwigs get used during training. 
+`chrombpnet` is now a PyTorch model that can be used the same as any other model and produces identical predictions to the original TensorFlow model. For example, here is an example of using this model to design an accessible site:
 
 ```python
 import torch
+from bpnetlite.bpnet import CountWrapper
+from tangermeme.design import greedy_substitution
+from tangermeme.utils import random_one_hot
 
-from tangermeme.io import extract_loci
-from bpnetlite.io import PeakGenerator
-from bpnetlite import BPNet
+X = random_one_hot((1, 4, 2114), random_state=0)
+y_bar = torch.tensor([[10.0]])
 
-peaks = 'test/CTCF.peaks.bed' # A set of loci to train on.
-seqs = '../../oak/common/hg38/hg38.fa' # A set of sequences to train on
-signals = ['test/CTCF.plus.bw', 'test/CTCF.minus.bw'] # A set of bigwigs
-controls = ['test/CTCF.plus.ctl.bw', 'test/CTCF.minus.ctl.bw'] # A set of bigwigs
+X_bar = greedy_substitution(CountWrapper(chrombpnet), X, y_bar, max_iter=5)
 ```
 
-After specifying filepaths for each of these, you can create the data generator. If you have a set of chromosomes you'd like to use for training, you can pass those in as well. They must match exactly with the names of chromsomes given in the BED file. 
-
-```python
-training_chroms = ['chr{}'.format(i) for i in range(1, 17)]
-
-training_data = PeakGenerator(peaks, seqs, signals, controls, chroms=training_chroms)
-```
-
-The `PeakGenerator` function is a wrapper around several functions that extract data, pass them into a generator that applies shifts and shuffling, and pass that generator into a PyTorch data loader object for use during training. The end result is an object that can be directly iterated over while training a bpnet-lite model. 
-
-Although wrapping all that functionality is good for the training set, the validation set should remain constant during training. Hence, one should only use the `extract_loci` function that is the first step when handling the training data.
-
-```python
-valid_chroms = ['chr{}'.format(i) for i in range(18, 23)]
-
-X_valid, y_valid, X_ctl_valid = extract_loci(peaks, seqs, signals, controls, chroms=valid_chroms, max_jitter=0)
-```
-Note that this function can be used without control tracks and, in that case, will only return two arguments. Further, it can used with only a FASTA and will only return one argument in that case: the extracted sequences. 
-
-Now, we can define the model. If you want to change the architecture, check out the documentation.
-
-```python
-model = BPNet(n_outputs=2, n_control_tracks=2, trimming=(2114 - 1000) // 2).cuda()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-```
-
-And, finally, we can call the `fit_generator` method to train the model. This function is largely just a training loop that trains the profile head using the multinomial log-likelihood loss and the count head using the mean-squared error loss, but a benefit of this built-in method is that it outputs a tsv of the training statistics that you can redirect to a log file.
-
-```python
-model.fit(training_data, optimizer, X_valid=X_valid, 
-	X_ctl_valid=X_ctl_valid, y_valid=y_valid)
-```
-
-Because `model` is a PyTorch object, it can be trained using a custom training loop in the same way any base PyTorch model can be trained if you'd prefer to do that. Likewise, if you'd prefer to use a custom data generator you can write your own and pass that into the `fit` function. 
