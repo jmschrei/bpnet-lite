@@ -13,19 +13,25 @@ In this documentation you will find an introduction to the BPNet and ChromBPNet 
 
 Installation is as simple as `pip install bpnet-lite`.
 
+.. toctree::
+	:maxdepth: 1
+	:hidden:
+	:caption: 
+	
+	self
+	whats_new.rst
+
 
 .. toctree::
 	:maxdepth: 1
 	:hidden:
-	:caption: Getting Started
+	:caption: Introductions
 	
-	self
 	tutorials/Intro_What_Is_BPNet.ipynb
 	tutorials/Intro_What_Is_ChromBPNet.ipynb
 	tutorials/Intro_What_Is_ProCapNet.ipynb
 	tutorials/Confirming_Chrom+BPnet_Predictions_Identical.ipynb
 
-	whats_new.rst
 
 .. toctree::
 	:maxdepth: 1
