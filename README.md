@@ -64,10 +64,27 @@ BPNet models trained using the pipeline described above are saved in the standar
 ```python
 import torch
 
-toy_model = torch.load("test.torch", weights_only=False)
+bpnet = torch.load("test.torch", weights_only=False)
 ```
 
-This is now a PyTorch model that can be used exactly the same way as any other model.
+This is now a PyTorch model that can be used exactly the same way as any other model. You can use it with tangermeme to efficiently make predictions:
+
+```python
+from tangermeme.predict import predict
+from tangermeme.utils import random_one_hot
+
+X = random_one_hot((10, 4, 2114), random_state=0)
+
+y_logits, y_logcounts = predict(bpnet, X)
+```
+
+... or to calculate attributions.
+
+```
+from tangermeme.deep_lift_shap import deep_lift_shap
+
+X_attr = deep_lift_shap(bpnet, X)
+```
 
 ## ChromBPNet
 
