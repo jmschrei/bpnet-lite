@@ -17,7 +17,9 @@ bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/art
 > [!NOTE]
 > As of v0.9.0 you can now include BAM/SAM and .tsv/.tsv.gz files in the JSONs for the bpnet-lite command-line tool and the conversion to bigWigs will be automatically performed using bam2bw. Because bam2bw is fast (around ~500k records/second) it is not always necessary to separately preprocess your data anymore.
 
-BPNet and ChromBPNet models are trained on read ends that have been mapped at basepair resolution (hence, the name) in peak regions and on GC-matched negatives. To facilitate getting your data into the format expected by these models, bpnet-lite has a built-in pipeline to preprocess your data once it has been aligned to your genome of interest (we recommend you use ChroMAP to do this step). First, bpnet-lite will run MACS3 on your input data (and optionally the controls) to call peaks and will then identify GC-matched negatives given those peaks and the provided genome. Then, it will convert SAM/BAM/tsv/bed/etc formatted files into the required bigWig files.  Note that if you can also provide any of these files (peak calls, peaks + negatives, signal and control tracks in bigWig format) instead. See the [MACS3](https://macs3-project.github.io/MACS/docs/callpeak.html) and [bam2bw](https://github.com/jmschrei/bam2bw) documenation for further details if you would like to manually do these steps.
+BPNet and ChromBPNet models are trained on read ends that have been mapped at basepair resolution (hence, the name) in peak regions and on GC-matched negatives. To facilitate getting your data into the format expected by these models, bpnet-lite has a built-in pipeline to preprocess your data once it has been aligned to your genome of interest (we recommend you use ChroMAP to do this step). First, bpnet-lite will run MACS3 on your input data (and optionally the controls) to call peaks and will then identify GC-matched negatives given those peaks and the provided genome. Then, it will convert SAM/BAM/tsv/bed/etc formatted files into the required bigWig files.  Note that if you can also provide any of these files (peak calls, peaks + negatives, signal and control tracks in bigWig format) instead. 
+
+See the [MACS3](https://macs3-project.github.io/MACS/docs/callpeak.html) and [bam2bw](https://github.com/jmschrei/bam2bw) documenation for further details if you would like to manually do these steps.
 
 
 ## BPNet
@@ -40,7 +42,13 @@ For example:
 bpnet pipeline-json -s hg38.fa -p peaks.bed.gz -i input1.bam -i input2.bam -c control1.bam -c control2.bam -n test -o pipeline.json -m JASPAR_2024.meme
 ```
 
-The JSON stores at `pipeline.json` can then be executed using the `pipeline` command. These commands are separated because, although the first command produces a valid JSON that the second command can immediately use (no need to copy/paste JSONs from this GitHub anymore!), one may wish to modify some of the many parameters in the JSON. These parameters include the number of filters and layers in the model, the training and validation chromosomes, and the even very technical ones like the number of shuffles to use when calculating attributions and the p-value threshold for calling seqlets. The defaults for most of these steps seem reasonable in practice but there is immense flexibility there, e.g., the ability to train the model using a reference genome and then make predictions or attributions on synthetic sequences or the reference genome from another species. In this manner, the JSON serves as documentation for the experiments that have been performed.
+If you are working with ATAC-seq data, which is unstranded and comes in the form of paired-end fragmnents, and would like to shift the reads to be +4/-4 (as they do in the ChromBPNet work) you can use the following:
+
+```
+bpnet pipeline-json -s hg38.fa -p peaks.bed.gz -i input1.bam -i input2.bam -n atac-test -o atac-pipeline.json -m JASPAR_2024.meme -ps 4 -ns -4 -u -f -pe
+```
+
+The JSON stores at `pipeline.json` or `atac-pipeline.json` can then be executed using the `pipeline` command. These commands are separated because, although the first command produces a valid JSON that the second command can immediately use (no need to copy/paste JSONs from this GitHub anymore!), one may wish to modify some of the many parameters in the JSON. These parameters include the number of filters and layers in the model, the training and validation chromosomes, and the even very technical ones like the number of shuffles to use when calculating attributions and the p-value threshold for calling seqlets. The defaults for most of these steps seem reasonable in practice but there is immense flexibility there, e.g., the ability to train the model using a reference genome and then make predictions or attributions on synthetic sequences or the reference genome from another species. In this manner, the JSON serves as documentation for the experiments that have been performed.
 
 ```
 bpnet pipeline -p pipeline.json
