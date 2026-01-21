@@ -48,6 +48,8 @@ If you are working with ATAC-seq data, which is unstranded and comes in the form
 bpnet pipeline-json -s hg38.fa -p peaks.bed.gz -i input1.bam -i input2.bam -n atac-test -o atac-pipeline.json -m JASPAR_2024.meme -ps 4 -ns -4 -u -f -pe
 ```
 
+Note that any of these data pointers can point to remote files. This will stream the data through bam2bw and read the peak files remotely. Processing speed will then be dependant on the speed of your internet connection and whether the hosting site throttles your connection.
+
 The JSON stores at `pipeline.json` or `atac-pipeline.json` can then be executed using the `pipeline` command. These commands are separated because, although the first command produces a valid JSON that the second command can immediately use (no need to copy/paste JSONs from this GitHub anymore!), one may wish to modify some of the many parameters in the JSON. These parameters include the number of filters and layers in the model, the training and validation chromosomes, and the even very technical ones like the number of shuffles to use when calculating attributions and the p-value threshold for calling seqlets. The defaults for most of these steps seem reasonable in practice but there is immense flexibility there, e.g., the ability to train the model using a reference genome and then make predictions or attributions on synthetic sequences or the reference genome from another species. In this manner, the JSON serves as documentation for the experiments that have been performed.
 
 ```
