@@ -41,13 +41,13 @@ def _mixture_loss(y, y_hat_logits, y_hat_logcounts, count_loss_weight,
 	count_loss = log1pMSELoss(y_hat_logcounts, y_).mean()
 
 	# Extract the profile loss for logging
-	profile_loss_ = profile_loss.item()
-	count_loss_ = count_loss.item()
+	#profile_loss_ = profile_loss.item()
+	#count_loss_ = count_loss.item()
 
 	# Mix losses together
 	loss = profile_loss + count_loss_weight * count_loss
 	
-	return profile_loss_, count_loss_, loss
+	return profile_loss, count_loss, loss
 
 
 def MNLLLoss(logps, true_counts):

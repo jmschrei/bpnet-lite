@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from tangermeme.predict import predict
 
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True	
 
 
 class ControlWrapper(torch.nn.Module):
@@ -378,7 +378,7 @@ class BPNet(torch.nn.Module):
 		"""
 
 		print("Warning: BPNet and ChromBPNet models trained using bpnet-lite may underperform those trained using the official repositories. See the GitHub README for further documentation.")
-        
+		
 		if X_valid is not None:
 			y_valid_counts = y_valid.sum(dim=2)
 
@@ -398,7 +398,7 @@ class BPNet(torch.nn.Module):
 			for data in training_data:
 				X, y, labels = data[0], data[-2], data[-1]
 				X_ctl = data[1].to(device) if len(data) == 4 else None
-
+				
 				X = X.to(device).float()
 				y = y.to(device)
 
@@ -414,8 +414,7 @@ class BPNet(torch.nn.Module):
 						y_hat_logits, y_hat_logcounts, self.count_loss_weight, labels)
 
 					loss.backward()
-					
-					#torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+					torch.nn.utils.clip_grad_norm_(self.parameters(), 1)
 					optimizer.step()
 
 				iteration += 1
@@ -445,12 +444,12 @@ class BPNet(torch.nn.Module):
 					iteration, 
 					train_time, 
 					valid_time, 
-					training_profile_loss_, 
-					training_count_loss_, 
-					valid_profile_loss, 
+					training_profile_loss_.item(), 
+					training_count_loss_.item(), 
+					valid_profile_loss.item(), 
 					valid_profile_corr.mean(),
 					valid_count_corr.mean(), 
-					valid_count_loss,
+					valid_count_loss.item(),
 					(valid_loss < best_loss).item()])
 
 				self.logger.save("{}.log".format(self.name))
@@ -622,7 +621,7 @@ class BPNet(torch.nn.Module):
 		model.linear.weight = torch.nn.Parameter(torch.tensor(w[name][k][:].T))
 		model.linear.bias = convert_b(w[name][b])
 		return model
-
+		
 
 class BasePairNet(torch.nn.Module):
 	"""A BPNet implementation matching that in basepairmodels

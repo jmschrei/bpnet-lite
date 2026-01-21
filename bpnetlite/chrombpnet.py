@@ -64,11 +64,11 @@ class ChromBPNet(torch.nn.Module):
 		representation which modifies the parameters of the model, hence, 
 		"dynamic." This model is usually a DynamicBPNet model, defined below.
 
-	name: str
-		The name to prepend when saving the file.
+	name: str, optional
+		The name to prepend when saving the file. Default is ChromBPNet.
 	"""
 
-	def __init__(self, bias, accessibility, name):
+	def __init__(self, bias, accessibility, name="ChromBPNet"):
 		super(ChromBPNet, self).__init__()
 		for parameter in bias.parameters():
 			parameter.requires_grad = False
@@ -293,7 +293,8 @@ class ChromBPNet(torch.nn.Module):
 
 
 	@classmethod
-	def from_chrombpnet_lite(self, bias_model, accessibility_model, name):
+	def from_chrombpnet_lite(self, bias_model, accessibility_model, 
+							 name='ChromBPNet'):
 		"""Load a ChromBPNet model trained in ChromBPNet-lite.
 
 		Confusingly, ChromBPNet-lite is a package written by Surag Nair that
@@ -317,8 +318,9 @@ class ChromBPNet(torch.nn.Module):
 		accessibility_model: str
 			The filename of the accessibility model.
 
-		name: str
-			The name to use when training the model and outputting to a file.
+		name: str, optional
+			The name to use when training the model and outputting to a file. Default
+			is 'ChromBPNet'.
 		
 
 		Returns
@@ -333,7 +335,8 @@ class ChromBPNet(torch.nn.Module):
 
 
 	@classmethod
-	def from_chrombpnet(self, bias_model, accessibility_model, name):
+	def from_chrombpnet(self, bias_model, accessibility_model, 
+		name='ChromBPNet'):
 		"""Load a ChromBPNet model trained using the official repository.
 
 		This method takes in the path to a .h5 file containing the full model,
@@ -351,7 +354,7 @@ class ChromBPNet(torch.nn.Module):
 		accessibility_model: str
 			The filename of the accessibility model.
 
-		name: str
+		name: str, optional
 			The name to use when training the model and outputting to a file.
 		
 

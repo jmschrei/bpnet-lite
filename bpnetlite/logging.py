@@ -67,3 +67,4 @@ class Logger():
 		"""
 
 		pandas.DataFrame(self.data).to_csv(name, sep='\t', index=False)
+		

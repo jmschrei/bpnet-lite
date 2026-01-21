@@ -14,7 +14,7 @@ desc = """BPNet is an neural network primarily composed of dilated residual
 	files for the signal to predict and the control signal, and train a
 	BPNet model for you."""
 
-_help = """Must be either 'negatives', 'fit', 'predict', 'evaluate', 
+_help = """Must be either 'negatives', 'fit', 'evaluate', 
 	'attribute', 'seqlets', 'marginalize', or 'pipeline'."""
 
 
@@ -65,10 +65,16 @@ json_parser.add_argument("-u", "--unstranded", action='store_true',
 	default=False, help="Whether the input is stranded")
 json_parser.add_argument("-f", "--fragments", action='store_true',
 	default=False, help='Whether the input are fragments or reads.')
-json_parser.add_argument("-m", "--motifs", type=str,
-	default="A motif database for marginalization and TF-MoDISco.")
+json_parser.add_argument("-ps", "--pos_shift", type=int,
+	default=0, help="How many bp to shift the + strand reads.")
+json_parser.add_argument("-ns", "--neg_shift", type=int,
+	default=0, help="how many bp to shift the - strand reads.")
+json_parser.add_argument("-m", "--motifs", type=str, default=None,
+	help="A motif database for marginalization and TF-MoDISco.")
 json_parser.add_argument("-o", "--output", type=str,
 	help="The filename for the pipeline JSON.")
+json_parser.add_argument("-pe", "--paired_end", action='store_true',
+	default=False, help="Whether the data is paired-end, or single-end.")
 
 #
 
@@ -78,16 +84,9 @@ fit_parser.add_argument("-p", "--parameters", type=str, required=True,
 
 #
 
-predict_parser = subparsers.add_parser("predict", 
-	help="Make predictions using a trained BPNet model.")
-predict_parser.add_argument("-p", "--parameters", type=str, required=True,
-	help="A JSON file containing the parameters for making predictions.")
-
-#
-
-predict_parser = subparsers.add_parser("evaluate", 
+evaluate_parser = subparsers.add_parser("evaluate", 
 	help="Evaluate a trained BPNet model.")
-predict_parser.add_argument("-p", "--parameters", type=str, required=True,
+evaluate_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters for making predictions.")
 
 #
@@ -119,15 +118,112 @@ pipeline_parser.add_argument("-p", "--parameters", type=str, required=True,
 	help="A JSON file containing the parameters used for each step.")
 
 
-###
-# Default Parameters
-###
+##########
+# DEFAULTS
+##########
 
-training_chroms = ['chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr9', 
-	'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 
-	'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
 
-validation_chroms = ['chr8', 'chr10']
+training_chroms = ["chr2", "chr4", "chr5", "chr7", "chr9", "chr10", "chr11",
+    "chr12", "chr13", "chr14", "chr15", "chr16", "chr17", "chr18", "chr19",
+    "chr21", "chr22", "chrX", "chrY"]
+
+validation_chroms = ['chr8', 'chr20']
+
+
+default_evaluate_parameters = {
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'verbose': False,
+	'chroms': validation_chroms,
+	'reverse_complement_averaging': False,
+	'device': 'cuda',
+	'dtype': 'float32',
+	'exclusion_lists': None,
+	'sequences': None,
+	'loci': None,
+	'controls': None,
+	'model': None,
+	'performance_filename': 'performance.tsv',
+	'skip': False,
+}
+
+
+default_attribute_parameters = {
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'verbose': False,
+	'chroms': training_chroms,
+	'exclusion_lists': None,
+	'sequences': None,
+	'loci': None,
+	'model': None,
+	'output': 'counts',
+	'ohe_filename': 'attributions.ohe.npz',
+	'attr_filename': 'attributions.attr.npz',
+	'idx_filename': 'attributions.idx.npy',
+	'n_shuffles': 20,
+	'random_state': 0,
+	'device': 'cuda',
+	'warning_threshold': 1e-3,
+	'skip': False,
+}
+
+
+default_seqlet_parameters = {
+	'threshold': 0.01,
+	'min_seqlet_len': 4,
+	'max_seqlet_len': 25,
+	'additional_flanks': 3,
+	'in_window': 2114,
+	'chroms': training_chroms,
+	'exclusion_lists': None,
+	'verbose': False,
+	'loci': None,
+	'ohe_filename': None,
+	'attr_filename': None,
+	'idx_filename': None,
+	'output_filename': 'seqlets.bed',
+	'skip': False,
+}
+
+
+default_annotation_parameters = {
+	'motifs': None,
+	'sequences': None,
+	'seqlet_filename': None,
+	'n_score_bins': 100,
+	'n_median_bins': 1000,
+	'n_target_bins': 100,
+	'n_cache': 250,
+	'reverse_complement': True,
+	'n_jobs': -1,
+	'output_filename': 'seqlets_annotated.bed',
+	'skip': False,
+}
+
+
+default_marginalize_parameters = {
+	'batch_size': 64,
+	'in_window': 2114,
+	'out_window': 1000,
+	'verbose': False,
+	'chroms': training_chroms,
+	'exclusion_lists': None,
+	'sequences': None,
+	'motifs': None,
+	'loci': None,
+	'attributions': False,
+	'n_loci': 100,
+	'shuffle': False,
+	'model': None,
+	'output_filename':'marginalize/',
+	'random_state':0,
+	'minimal': True,
+	'device': 'cuda',
+	'skip': False,
+}
 
 
 default_fit_parameters = {
@@ -165,145 +261,22 @@ default_fit_parameters = {
 	'signals': None,
 	'controls': None,
 	'random_state': None,
-	'performance_filename': 'performance.tsv'
+	'performance_filename': 'performance.tsv',
+
+	'skip': False,
 }
-
-
-default_predict_parameters = {
-	'batch_size': 64,
-	'in_window': 2114,
-	'out_window': 1000,
-	'verbose': False,
-	'chroms': training_chroms,
-	'reverse_complement_averaging': False,
-	'device': 'cuda',
-	'dtype': 'float32',
-	'exclusion_lists': None,
-	'sequences': None,
-	'loci': None,
-	'controls': None,
-	'model': None,
-	'profile_filename': 'predictions.profile.npz',
-	'counts_filename': 'predictions.counts.npz',
-	'idx_filename': 'predictions.idx.npy'
-}
-
-
-default_evaluate_parameters = {
-	'batch_size': 64,
-	'in_window': 2114,
-	'out_window': 1000,
-	'verbose': False,
-	'chroms': training_chroms,
-	'reverse_complement_average': False,
-	'device': 'cuda',
-	'dtype': 'float32',
-	'exclusion_lists': None,
-	'sequences': None,
-	'loci': None,
-	'controls': None,
-	'model': None,
-	'performance_filename': 'performance.tsv'
-}
-
-
-default_attribute_parameters = {
-	'batch_size': 64,
-	'in_window': 2114,
-	'out_window': 1000,
-	'verbose': False,
-	'chroms': training_chroms,
-	'exclusion_lists': None,
-	'sequences': None,
-	'loci': None,
-	'model': None,
-	'output': 'counts',
-	'ohe_filename': 'attributions.ohe.npz',
-	'attr_filename': 'attributions.attr.npz',
-	'idx_filename': 'attributions.idx.npy',
-	'n_shuffles': 20,
-	'random_state': 0,
-	'device': 'cuda',
-	'warning_threshold': 1e-3
-}
-
-
-default_seqlet_parameters = {
-	'threshold': 0.01,
-	'min_seqlet_len': 4,
-	'max_seqlet_len': 25,
-	'additional_flanks': 3,
-	'in_window': 2114,
-	'chroms': training_chroms,
-	'exclusion_lists': None,
-	'verbose': False,
-	'loci': None,
-	'ohe_filename': None,
-	'attr_filename': None,
-	'idx_filename': None,
-	'output_filename': 'seqlets.bed',
-}
-
-
-default_annotation_parameters = {
-	'motifs': None,
-	'sequences': None,
-	'seqlet_filename': None,
-	'n_score_bins': 100,
-	'n_median_bins': 1000,
-	'n_target_bins': 100,
-	'n_cache': 250,
-	'reverse_complement': True,
-	'n_jobs': -1,
-	'output_filename': 'seqlets_annotated.bed'
-}
-
-
-default_marginalize_parameters = {
-	'batch_size': 64,
-	'in_window': 2114,
-	'out_window': 1000,
-	'verbose': False,
-	'chroms': training_chroms,
-	'exclusion_lists': None,
-	'sequences': None,
-	'motifs': None,
-	'loci': None,
-	'attributions': False,
-	'n_loci': 100,
-	'shuffle': False,
-	'model': None,
-	'output_filename':'marginalize/',
-	'random_state':0,
-	'minimal': True,
-	'device': 'cuda'
-}
-
 
 default_pipeline_parameters = {
-	# Model architecture parameters
-	'n_filters': 64,
-	'n_layers': 8,
-	'profile_output_bias': True,
-	'count_output_bias': True,
+	# Shared parameters
 	'in_window': 2114,
 	'out_window': 1000,
 	'name': None,
 	'model': None,
 	'dtype': 'float32',
 	'device': 'cuda',
-	'early_stopping': 10,
 
 	# Data parameters
 	'batch_size': 64,
-	'max_jitter': 128,
-	'reverse_complement': True,
-	'reverse_complement_average': True,
-	'max_epochs': 20,
-	'lr': 0.001,
-	'scheduler': True,
-	'negative_ratio': 0.333,
-	'count_loss_weight': None,
 	'verbose': True,
 	'min_counts': 0,
 	'max_counts': 99999999,
@@ -314,14 +287,39 @@ default_pipeline_parameters = {
 	'loci': None,
 	'signals': None,
 	'controls': None,
-	'find_negatives': False,
-	'unstranded': False,
-	'fragments': False,
 
+	'skip': False,
+	'dry_run': False,
 
+	# Data processing parameters
+	'preprocessing_parameters': {
+		'unstranded': False,
+		'fragments': False,
+		'paired_end': False,
+		'pos_shift': 0,
+		'neg_shift': 0,
+		'callpeaks_format': None,
+		'callpeaks_gsize': 'hs',
+		'callpeaks_q': 0.01,
+		'verbose': True
+	},
+		
 	# Fit parameters
 	'fit_parameters': {
+		'n_filters': 64,
+		'n_layers': 8,
+		'profile_output_bias': True,
+		'count_output_bias': True,
 		'batch_size': 64,
+		'lr': 0.001,
+		'scheduler': True,
+		'negative_ratio': 0.333,
+		'count_loss_weight': None,
+		'early_stopping': 5,
+		'max_jitter': 128,
+		'reverse_complement': True,
+		'reverse_complement_average': True,
+		'max_epochs': 20,
 		'training_chroms': training_chroms,
 		'validation_chroms': validation_chroms,
 		'sequences': None,
@@ -331,27 +329,8 @@ default_pipeline_parameters = {
 		'verbose': None,
 		'random_state': None,
 		'summits': False,
-		'performance_filename': None
+		'performance_filename': None,
 	},
-
-
-	# Predict parameters
-	'predict_parameters': {
-		'batch_size': 64,
-		'chroms': validation_chroms,
-		'reverse_complement_average': False,
-		'profile_filename': None,
-		'counts_filename': None,
-		'idx_filename': None,
-		'sequences': None,
-		'loci': None,
-		'signals': None,
-		'controls': None,
-		'dtype': None,
-		'device': None,
-		'verbose': None
-	},
-
 
 	# Attribution parameters
 	'attribute_parameters': {
@@ -435,11 +414,6 @@ default_pipeline_parameters = {
 }
 
 
-##########
-# COMMANDS
-##########
-
-
 def _extract_set(parameters, defaults, name):
 	subparameters = {
 		key: parameters.get(key, None) for key in defaults if key in parameters
@@ -450,6 +424,7 @@ def _extract_set(parameters, defaults, name):
 			subparameters[parameter] = value
 
 	return subparameters
+
 
 def _check_set(parameters, parameter, value):
 	if parameters.get(parameter, None) == None:
@@ -491,6 +466,12 @@ def merge_parameters(parameters, default_parameters):
 	return parameters
 
 
+
+##########
+# COMMANDS
+##########
+
+
 # Pull the arguments
 args = parser.parse_args()
 
@@ -501,7 +482,10 @@ args = parser.parse_args()
 
 
 if args.cmd == 'negatives':
+	import pyfaidx
 	from tangermeme.match import extract_matching_loci
+
+	chroms = list(pyfaidx.Fasta(args.fasta).keys())
 	
 	# Extract regions that match the GC content of the peaks
 	matched_loci = extract_matching_loci(
@@ -513,11 +497,13 @@ if args.cmd == 'negatives':
 		signal_beta=args.beta,
 		in_window=args.in_window,
 		out_window=args.out_window,
-		chroms=None,
-		verbose=args.verbose
+		chroms=chroms,
+		verbose=args.verbose,
+		n_jobs=-1
 	)
 
 	matched_loci.to_csv(args.output, header=False, sep='\t', index=False)
+	sys.exit()
 
 
 ##########
@@ -526,6 +512,7 @@ if args.cmd == 'negatives':
 
 
 if args.cmd == 'pipeline-json':
+	pp = 'preprocessing_parameters'
 	parameters = default_pipeline_parameters.copy()
 	
 	parameters['sequences'] = args.sequences
@@ -534,10 +521,13 @@ if args.cmd == 'pipeline-json':
 	parameters['signals'] = args.inputs
 	parameters['controls'] = args.controls
 	parameters['name'] = args.name
-	parameters['unstranded'] = args.unstranded
 	parameters['motifs'] = args.motifs
-	parameters['find_negatives'] = args.negatives is None
-	parameters['fragments'] = args.fragments
+
+	parameters[pp]['unstranded'] = args.unstranded
+	parameters[pp]['fragments'] = args.fragments
+	parameters[pp]['pos_shift'] = args.pos_shift
+	parameters[pp]['neg_shift'] = args.neg_shift
+	parameters[pp]['paired_end'] = args.paired_end
 	
 	with open(args.output, 'w') as outfile:
 		outfile.write(json.dumps(parameters, indent=4))
@@ -555,6 +545,7 @@ os.environ['TORCH_CUDNN_V8_API_ENABLED'] = '1'
 
 import torch
 torch.backends.cudnn.benchmark = True
+torch.set_float32_matmul_precision('high')
 
 import numpy
 
@@ -572,10 +563,12 @@ from tangermeme.seqlet import recursive_seqlets
 
 
 if args.cmd == "fit":
+	parameters = merge_parameters(args.parameters, default_fit_parameters)
+	if parameters['skip']:
+		sys.exit()
+
 	from bpnetlite.bpnet import BPNet
 	
-	parameters = merge_parameters(args.parameters, default_fit_parameters)
-
 	if parameters['verbose']:
 		print("Training Chroms: ", parameters['training_chroms'])
 		print("Vaidation Chroms: ", parameters['validation_chroms'])
@@ -658,14 +651,22 @@ if args.cmd == "fit":
 		name=parameters['name'],
 		verbose=parameters['verbose']).to(parameters['device'])
 
+	if parameters['verbose']:
+		print("Model has {} dilated layers and {} filters".format(
+			parameters['n_layers'], parameters['n_filters'])
+		)
+		print("Model has {} trainable parameters.\n".format(
+			sum(p.numel() for p in model.parameters() if p.requires_grad))
+		)
+
 	optimizer = torch.optim.Adam(model.parameters(), lr=parameters['lr'])
 	
-	if parameters['scheduler']:
+	if parameters['scheduler']:	
 		scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5,
 			patience=5, threshold=0.0001, min_lr=0.0001)
 	else:
 		scheduler = None
-        
+
 	model.fit(training_data, optimizer, scheduler,
 		X_valid=valid_sequences, 
 		X_ctl_valid=valid_controls, y_valid=valid_signals, 
@@ -674,7 +675,6 @@ if args.cmd == "fit":
 		early_stopping=parameters['early_stopping'],
 		dtype=parameters['dtype'],
 		device=parameters['device'])
-	
 	
 	### Evaluate Model
 	
@@ -694,13 +694,21 @@ if args.cmd == "fit":
 
 
 ##########
-# PREDICT
+# EVALUATE
 ##########
 
 
-elif args.cmd == 'predict':
+elif args.cmd == 'evaluate':
+	parameters = merge_parameters(args.parameters, default_evaluate_parameters)
+	if parameters['skip']:
+		sys.exit()
+	
+	from bpnetlite.bpnet import CountWrapper
+	from bpnetlite.performance import calculate_performance_measures
 	from tangermeme.predict import predict
-	parameters = merge_parameters(args.parameters, default_predict_parameters)
+
+	measure_names = ['profile_mnll', 'profile_jsd', 'profile_pearson', 
+		'profile_spearman', 'count_pearson', 'count_spearman', 'count_mse']	
 
 	###
 
@@ -709,6 +717,7 @@ elif args.cmd == 'predict':
 
 	examples = extract_loci(
 		sequences=parameters['sequences'],
+		signals=parameters['signals'],
 		in_signals=parameters['controls'],
 		loci=parameters['loci'],
 		chroms=parameters['chroms'],
@@ -717,23 +726,19 @@ elif args.cmd == 'predict':
 		exclusion_lists=parameters['exclusion_lists'],
 		max_jitter=0,
 		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
-		return_mask=True,
 		verbose=parameters['verbose']
 	)
 
 	if parameters['controls'] == None:
-		X, idxs = examples
+		X, y = examples
+		X_ctl = None
 		if model.n_control_tracks > 0:
-			X_ctl = torch.zeros(X.shape[0], model.n_control_tracks, X.shape[-1])
-		else:
-			X_ctl = None
+			model = CountWrapper(model)
 	else:
-		X, X_ctl, idxs = examples
-
-	if X_ctl is not None:
+		X, y, X_ctl = examples
 		X_ctl = (X_ctl,)
 
-	y_profile, y_counts = predict(model, X, args=X_ctl, 
+	y_hat_logits, y_hat_logcounts = predict(model, X, args=X_ctl, 
 		batch_size=parameters['batch_size'], device=parameters['device'], 
 		dtype=parameters['dtype'], verbose=parameters['verbose'])
 
@@ -741,73 +746,26 @@ elif args.cmd == 'predict':
 		X_rc = torch.flip(X, dims=(-1, -2))
 		X_ctl_rc = None if X_ctl is None else (torch.flip(X_ctl[0], dims=(-1, -2)),)
 	
-		y_profile_rc, y_counts_rc = predict(model, X_rc, args=X_ctl_rc, 
+		y_hat_logits_rc, y_hat_logcounts_rc = predict(model, X_rc, args=X_ctl_rc, 
 			batch_size=parameters['batch_size'], device=parameters['device'], 
 			dtype=parameters['dtype'], verbose=parameters['verbose'])
 		
-		y_profile_rc = torch.flip(y_profile_rc, dims=(-1, -2))
-		
-		y_profile = (y_profile + y_profile_rc) / 2
-		y_counts = (y_counts + y_counts_rc) / 2
-
-	numpy.savez_compressed(parameters['profile_filename'], y_profile)
-	numpy.savez_compressed(parameters['counts_filename'], y_counts)
-	numpy.savez_compressed(parameters['idx_filename'], idxs)
-
-
-##########
-# EVALUATE
-##########
-
-
-elif args.cmd == 'evaluate':
-	from bpnetlite.performance import calculate_performance_measures
-
-	parameters = merge_parameters(args.parameters, default_evaluate_parameters)
-	measure_names = ['profile_mnll', 'profile_jsd', 'profile_pearson', 
-		'profile_spearman', 'count_pearson', 'count_spearman', 'count_mse']
-
-	###
-
-	name = parameters['name']
-	predict_parameters = parameters.copy()
-	predict_parameters['profile_filename'] = '{}.eval.profile.npz'.format(name)
-	predict_parameters['counts_filename'] = '{}.eval.counts.npz'.format(name)
-	predict_parameters['idx_filename'] = '{}.eval.idx.npz'.format(name)
-
-	with open("{}.bpnet.evaluate.predict.json".format(name), "w") as outfile:
-		outfile.write(json.dumps(predict_parameters, sort_keys=True, indent=4))
-
-	os.system("bpnet predict -p {}.bpnet.evaluate.predict.json".format(name))
-
-	y_hat_logits = numpy.load('{}.eval.profile.npz'.format(name))['arr_0']
-	y_hat_logits = torch.from_numpy(y_hat_logits)
-
-	y_hat_logcounts = numpy.load('{}.eval.counts.npz'.format(name))['arr_0']
-	y_hat_logcounts = torch.from_numpy(y_hat_logcounts)
-
-	os.system("rm {}.eval.*.npz".format(name))
-
-	_, y = extract_loci(
-		sequences=parameters['sequences'],
-		signals=parameters['signals'],
-		loci=parameters['loci'],
-		chroms=parameters['chroms'],
-		in_window=parameters['in_window'],
-		out_window=parameters['out_window'],
-		exclusion_lists=parameters['exclusion_lists'],
-		max_jitter=0,
-		ignore=list('QWERYUIOPSDFHJKLZXVBNM'),
-		verbose=parameters['verbose']
-	)
+		y_hat_logits_rc = torch.flip(y_hat_logits_rc, dims=(-1, -2))
+		y_hat_logits = (y_hat_logits + y_hat_logits_rc) / 2
+		y_hat_logcounts = (y_hat_logcounts + y_hat_logcounts_rc) / 2
 
 	measures = calculate_performance_measures(y_hat_logits, y, 
-		y_hat_logcounts, smooth_true=True)
+		y_hat_logcounts, kernel_sigma=7, kernel_width=81)
 
 	with open(parameters['performance_filename'], "w") as outfile:
 		outfile.write("\t".join(measure_names))
 		outfile.write("\n")
 		outfile.write("\t".join([str(measures[name].mean().item()) 
+			for name in measure_names]))
+
+	if parameters['verbose']:
+		print("\t".join(measure_names))
+		print("\t".join([str(measures[name].mean().item()) 
 			for name in measure_names]))
 
 
@@ -817,12 +775,14 @@ elif args.cmd == 'evaluate':
 
 
 elif args.cmd == 'attribute':
+	parameters = merge_parameters(args.parameters, default_attribute_parameters)
+	if parameters['skip']:
+		sys.exit()
+
 	from bpnetlite.bpnet import CountWrapper
 	from bpnetlite.bpnet import ProfileWrapper
 	from bpnetlite.chrombpnet import ChromBPNet
 	from bpnetlite.attribute import deep_lift_shap
-
-	parameters = merge_parameters(args.parameters, default_attribute_parameters)
 
 	###
 
@@ -846,9 +806,11 @@ elif args.cmd == 'attribute':
 	n_idxs = X.sum(dim=(1, 2)) == X.shape[-1]
 	X = X[n_idxs]
 	
-	idxs = idxs[n_idxs]
+	idxs[~n_idxs] = False
 
-	model = ControlWrapper(model)
+	if model.n_control_tracks > 0:
+		model = ControlWrapper(model)
+		
 	if parameters['output'] == 'counts':
 		wrapper = CountWrapper(model)
 	elif parameters['output'] == 'profile':
@@ -876,9 +838,11 @@ elif args.cmd == 'attribute':
 
 
 elif args.cmd == 'seqlets':
-	from tangermeme.io import _interleave_loci
-
 	parameters = merge_parameters(args.parameters, default_seqlet_parameters)
+	if parameters['skip']:
+		sys.exit()
+
+	from tangermeme.io import _interleave_loci
 
 	###
 
@@ -913,16 +877,20 @@ elif args.cmd == 'seqlets':
 
 
 elif args.cmd == 'marginalize':
-	from bpnetlite.marginalize import marginalization_report
-
 	parameters = merge_parameters(args.parameters, 
 		default_marginalize_parameters)
+	if parameters['skip']:
+		sys.exit()
+
+	from bpnetlite.marginalize import marginalization_report
 
 	###
 
 	model = torch.load(parameters['model'], weights_only=False).to(
 		parameters['device'])
-	model = ControlWrapper(model)
+
+	if model.n_control_tracks > 0:
+		model = ControlWrapper(model)
 
 	X = extract_loci(
 		sequences=parameters['sequences'],
@@ -961,38 +929,81 @@ elif args.cmd == 'pipeline':
 	import subprocess
 	
 	parameters = merge_parameters(args.parameters, default_pipeline_parameters)
+	preprocess_parameters = parameters['preprocessing_parameters']
+	
 	pname = parameters['name']
 
-
 	###
-	# Step 0.1: Convert from SAM/BAMs to bigwigs if provided
+	# Step 0.1: Run MACS3 to call peaks if not provided
 	###
 
-	ftypes = '.sam', '.bam', '.tsv', '.tsv.gz'
+	if parameters['loci'] is None:
+		if preprocess_parameters['verbose']:
+			print("\nStep 0.1: Call peaks using MACS3.")
+
+		if preprocess_parameters['callpeaks_format'] is None:
+			file_format = parameters['signals'][0].split(".")[-1].upper()
+
+			if preprocess_parameters['paired_end']:
+				file_format += 'PE'
+
+			preprocess_parameters['callpeaks_format'] = file_format
+			
+		
+		args = [
+			"macs3", "callpeak",
+			"-f", preprocess_parameters['callpeaks_format'],
+			"-g", str(preprocess_parameters['callpeaks_gsize']),
+			"-n", pname,
+			"-q", str(preprocess_parameters['callpeaks_q']),
+			"-t"
+		]
+
+		args.extend(parameters['signals'])
+
+		if parameters['controls'] is not None:
+			args += ['-c'] 
+			args.extend(parameters['controls'])
+
+		parameters['loci'] = [pname + '_peaks.narrowPeak']
+		
+		if not parameters['dry_run']:
+			subprocess.run(args, check=True)
+
+	
+	###
+	# Step 0.2: Convert from SAM/BAMs to bigwigs if provided
+	###
+
+	ftypes = '.sam', '.bam', '.bed', '.bed.gz', '.tsv', '.tsv.gz'
 
 	if parameters['signals'][0].endswith(ftypes):
-		if parameters['verbose']:
-			print("Step 0.1: Convert data to bigWigs")
+		if preprocess_parameters['verbose']:
+			print("Step 0.2: Convert data to bigWigs")
 		
 		args = [
 			"bam2bw", 
 			"-s", parameters['sequences'], 
 			"-n", pname,
+			"-ps", str(preprocess_parameters['pos_shift']),
+			"-ns", str(preprocess_parameters['neg_shift']),
+			"-p", "-1",
 		]
 
-		if parameters["unstranded"]:
+		if preprocess_parameters["unstranded"]:
 			args += ["-u"]
 
-		if parameters['fragments']:
+		if preprocess_parameters['fragments']:
 			args += ["-f"]
 
-		if parameters["verbose"]:
+		if preprocess_parameters["verbose"]:
 			args += ["-v"]
 
 		args += parameters['signals']
-		subprocess.run(args, check=True)
+		if not parameters['dry_run']:
+			subprocess.run(args)
 
-		if parameters["unstranded"]:
+		if preprocess_parameters["unstranded"]:
 			parameters['signals'] = [pname + ".bw"]
 		else:
 			parameters['signals'] = [pname + ".+.bw", pname + ".-.bw"]
@@ -1004,33 +1015,37 @@ elif args.cmd == 'pipeline':
 				"bam2bw", 
 				"-s", parameters['sequences'], 
 				"-n", pname + ".control",
+				"-ps", str(preprocess_parameters['pos_shift']),
+				"-ns", str(preprocess_parameters['neg_shift']),
+				"-p", "-1"
 			]
 
-			if parameters["unstranded"]:
+			if preprocess_parameters["unstranded"]:
 				args += ["-u"]
 
-			if parameters["fragments"]:
+			if preprocess_parameters["fragments"]:
 				args += ["-f"]
 
-			if parameters["verbose"]:
+			if preprocess_parameters["verbose"]:
 				args += ["-v"]
 
 			args += parameters['controls']
-			subprocess.run(args, check=True)
+			if not parameters['dry_run']:
+				subprocess.run(args)
 
-			if parameters["unstranded"]:
+			if preprocess_parameters["unstranded"]:
 				parameters['controls'] = [pname + ".control.bw"]
 			else:
 				parameters['controls'] = [pname + ".control.+.bw", pname + ".control.-.bw"]
 
-
+		
 	###
-	# Step 0.2: Identify GC-matched negative regions
+	# Step 0.3: Identify GC-matched negative regions
 	###
 
-	if parameters['find_negatives'] == True:
-		if parameters['verbose']:
-			print("\nStep 0.2: Find GC-matched negative regions.")
+	if parameters['negatives'] is None:
+		if preprocess_parameters['verbose']:
+			print("\nStep 0.3: Find GC-matched negative regions.")
 
 		args = [
 			"bpnet", "negatives", 
@@ -1039,12 +1054,13 @@ elif args.cmd == 'pipeline':
 			"-o", pname + ".negatives.bed"
 		]
 
-		if parameters['verbose']:
+		if preprocess_parameters['verbose']:
 			args += ['-v']
 
 		parameters["negatives"] = [pname + ".negatives.bed"]
 
-		subprocess.run(args, check=True)
+		if not parameters['dry_run']:
+			subprocess.run(args, check=True)
 
 
 	###
@@ -1065,35 +1081,16 @@ elif args.cmd == 'pipeline':
 		with open(name, 'w') as outfile:
 			outfile.write(json.dumps(fit_parameters, sort_keys=True, indent=4))
 
-		subprocess.run(["bpnet", "fit", "-p", name], check=True)
+		if not parameters['dry_run']:
+			subprocess.run(["bpnet", "fit", "-p", name], check=True)
 
 
 	###
-	# Step 2: Make predictions for the entire validation set
-	###
-
-	if parameters['verbose']:
-		print("\nStep 2: Making predictions")
-
-	predict_parameters = _extract_set(parameters, 
-		default_predict_parameters, 'predict_parameters')
-	_check_set(predict_parameters, 'profile_filename', pname+'.predictions.profiles.npz')
-	_check_set(predict_parameters, 'counts_filename',  pname+'.predictions.counts.npz')
-	_check_set(predict_parameters, 'idx_filename',     pname+'.predictions.idxs.npy')
-
-	name = '{}.bpnet.predict.json'.format(parameters['name'])
-	with open(name, 'w') as outfile:
-		outfile.write(json.dumps(predict_parameters, sort_keys=True, indent=4))
-
-	subprocess.run(["bpnet", "predict", "-p", name], check=True)
-
-
-	###
-	# Step 3: Calculate attributions
+	# Step 2: Calculate attributions
 	###
 
 	if parameters['verbose']:
-		print("\nStep 3: Calculating attributions")
+		print("\nStep 2: Calculating attributions")
 
 	attribute_parameters = _extract_set(parameters, 
 		default_attribute_parameters, 'attribute_parameters')
@@ -1105,15 +1102,16 @@ elif args.cmd == 'pipeline':
 	with open(name, 'w') as outfile:
 		outfile.write(json.dumps(attribute_parameters, sort_keys=True, indent=4))
 
-	subprocess.run(["bpnet", "attribute", "-p", name], check=True)
+	if not parameters['dry_run']:
+		subprocess.run(["bpnet", "attribute", "-p", name], check=True)
 
 
 	###
-	# Step 4.1: Identify seqlets from attributions
+	# Step 3.1: Identify seqlets from attributions
 	###
 
 	if parameters['verbose']:
-		print("\nStep 4.1: Seqlet identification")
+		print("\nStep 3.1: Seqlet identification")
 
 	seqlet_parameters = _extract_set(parameters,
 		default_seqlet_parameters, 'seqlet_parameters')
@@ -1127,15 +1125,16 @@ elif args.cmd == 'pipeline':
 	with open(name, 'w') as outfile:
 		outfile.write(json.dumps(seqlet_parameters, sort_keys=True, indent=4))
 
-	subprocess.run(["bpnet", "seqlets", "-p", name], check=True)
+	if not parameters['dry_run']:
+		subprocess.run(["bpnet", "seqlets", "-p", name], check=True)
 
 
 	###
-	# Step 4.2: Annotate seqlets using motif database
+	# Step 3.2: Annotate seqlets using motif database
 	###
 
 	if parameters['verbose']:
-		print("\nStep 4.2: Seqlet annotation")
+		print("\nStep 3.2: Seqlet annotation")
 
 	annotation_parameters = _extract_set(parameters, 
 		default_annotation_parameters, "annotation_parameters")
@@ -1161,8 +1160,9 @@ elif args.cmd == 'pipeline':
 	if annotation_parameters['motifs'] is not None:
 		cmd += ["-t", annotation_parameters["motifs"]]
 
-	with open(annotation_parameters['output_filename'], "w") as f:
-		subprocess.run(cmd, check=True, stdout=f)
+	if not parameters['dry_run']:
+		with open(annotation_parameters['output_filename'], "w") as f:
+			subprocess.run(cmd, check=True, stdout=f)
 
 	annotated_seqlets = pandas.read_csv(annotation_parameters['output_filename'],
 		sep="\t", header=None, usecols=(3,), names=['motifs'])
@@ -1172,11 +1172,11 @@ elif args.cmd == 'pipeline':
 
 
 	###
-	# Step 5.1: Run TF-MoDISco
+	# Step 4.1: Run TF-MoDISco
 	###
 
 	if parameters['verbose']:
-		print("\nStep 5.1: TF-MoDISco motifs")
+		print("\nStep 4.1: TF-MoDISco motifs")
 
 	modisco_parameters = parameters['modisco_motifs_parameters']
 
@@ -1199,48 +1199,61 @@ elif args.cmd == 'pipeline':
 	elif parameters['verbose']:
 		cmd += ' -v'
 
-	subprocess.run(cmd.split(), check=True)
+	if not parameters['dry_run']:
+		subprocess.run(cmd.split(), check=True)
 
 
 	###
-	# Step 5.2: Generate the tf-modisco report
+	# Step 4.2: Generate the tf-modisco report
 	###
 	
 	report_parameters = parameters['modisco_report_parameters']
 	_check_set(report_parameters, "verbose", parameters["verbose"])
 	_check_set(report_parameters, "output_folder", pname+"_modisco/")
 	_check_set(report_parameters, "motifs", parameters['motifs'])
-
+	
 	if report_parameters['verbose']:
-		print("\nStep 5.2: TF-MoDISco reports")
-	
-	subprocess.run(["modisco", "report", 
-		"-i", modisco_parameters['output_filename'], 
-		"-o", report_parameters['output_folder'],
-		"-s", './',
-		"-m", report_parameters['motifs']
-		], check=True)
+		print("\nStep 4.2: TF-MoDISco reports")
 
+	if not parameters['dry_run']:
+		if report_parameters['motifs'] is not None:
+			subprocess.run(["modisco", "report", 
+				"-i", modisco_parameters['output_filename'], 
+				"-o", report_parameters['output_folder'],
+				"-s", './',
+				"-m", report_parameters['motifs']
+				], check=True)
+		else:
+			subprocess.run(["modisco", "report", 
+				"-i", modisco_parameters['output_filename'], 
+				"-o", report_parameters['output_folder'],
+				"-s", './'
+				], check=True)
+        
 
 	###
-	# Step 6: Marginalization experiments
+	# Step 5: Marginalization experiments
 	###
-	
+
+	if parameters['motifs'] is None:
+		sys.exit()
+		
 	if parameters['verbose']:
-		print("\nStep 6: Run marginalizations")
-
+		print("\nStep 5: Run marginalizations")
+	
 	marginalize_parameters = _extract_set(parameters, 
 		default_marginalize_parameters, "marginalize_parameters")
-
+	
 	_check_set(marginalize_parameters, "loci", parameters["negatives"])
 	_check_set(marginalize_parameters, 'output_filename', pname+"_marginalize/")
 	_check_set(marginalize_parameters, 'motifs', parameters['motifs'])
 	_check_set(marginalize_parameters, 'negatives', parameters['negatives'])
-
+	
 	name = '{}.bpnet.marginalize.json'.format(parameters['name'])
-
+	
 	with open(name, 'w') as outfile:
 		outfile.write(json.dumps(marginalize_parameters, sort_keys=True, 
 			indent=4))
 
-	subprocess.run(["bpnet", "marginalize", "-p", name], check=True)
+	if not parameters['dry_run']:
+		subprocess.run(["bpnet", "marginalize", "-p", name], check=True)

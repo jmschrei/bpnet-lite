@@ -9,7 +9,7 @@ setup(
     scripts=['bpnet', 'chrombpnet'],
     url='https://github.com/jmschrei/bpnet-lite',
     license='LICENSE.txt',
-    description='bpnet-lite is a minimal implementation of BPNet, a neural network aimed at interpreting regulatory activity of the genome.',
+    description='bpnet-lite is a minimal implementation of Chrom/BPNet, a neural network aimed at interpreting regulatory activity of the genome.',
     install_requires=[
         "numpy >= 1.14.2",
         "scipy >= 1.0.0",
@@ -20,6 +20,7 @@ setup(
         "seaborn >= 0.11.2",
         "modisco-lite >= 2.0.0",
         "tangermeme >= 0.2.3",
+		"macs3",
         "bam2bw"
     ],
 )
