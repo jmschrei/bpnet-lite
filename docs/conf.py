@@ -22,7 +22,7 @@ copyright = '2025, Jacob Schreiber'
 author = 'Jacob Schreiber'
 
 # The full version, including alpha/beta/rc tags
-release = 'v0.10.0'
+release = 'v0.0.1'
 
 
 # -- General configuration ---------------------------------------------------
