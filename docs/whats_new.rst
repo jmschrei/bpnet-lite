@@ -1,0 +1,396 @@
+.. currentmodule:: bpnetlite
+
+
+===============
+Release History
+===============
+
+Version 0.9.5
+=============
+
+highlights
+----------
+
+	- Minor bug fixes related to exclusion list and control tracks with the pipeline
+
+
+
+Version 0.9.4
+=============
+
+io
+=====
+
+	- Fixed a small bug in the calculation of epoch length. Thanks @amanpatel101
+
+
+Version 0.9.3
+=============
+
+bpnet cmd
+---------
+
+	- Made the `bpnet evaluate` command more robust
+
+
+performance
+-----------
+
+	- Fixed a minor bug with count loss shapes
+	- Fixed an issue with dtypes not being correctly assigned in _kl_divergence
+
+io
+----
+
+	- Keep the data as numpy arrays for faster slicing 
+
+
+
+Version 0.9.2
+=============
+
+bpnet cmd
+---------
+
+	- Reorganized imports to make `bpnet pipeline-json` immediate
+	- Added a large number of print statements if verbose is True
+	- Added an evaluation at the end of the `fit` command to report validation set performance measures
+	- Added an `evaluate` command that runs a model on a provided set and reports performance measures
+	- Added a reverse complement averaging function to the prediction command
+	- Changed default `negative_ratio` to 0.333.
+	- Changed the `alpha` parameter to `count_loss_weight` for interpretability
+	- If not provided, `count_loss_weight` will be automatically derived from training data as mean(reads_in_peaks) / n_peaks.
+	- Set `scheduler` to True by default
+	- When `scheduler` is True, use a ReduceLROnPlateau scheduler that halves the LR every 5 iterations without improvement
+	- Set default early stopping to 10
+	- Added in an optional argument for exclusion lists, where peaks and negatives overlapping them are removed
+
+bpnet
+-----
+
+	- Changed `alpha` to `count_loss_weight`
+	- Reorganized code to make the `fit` function easier to follow
+	- Added in an internal `_mixture_loss` that ensures consistency in calculating the multinomial
+	- Added in gradient clipping at a norm of 0.5
+	- Added in option (default True) to only calculate profile loss on peaks
+	- Calculate validation loss only at the end of every epoch
+	- Removes the `validation_iter` argument
+
+performance
+-----------
+
+	- Changed `calculate_performance_measures` to internally normalize logits and also to sum counts across all strands to match the model
+	
+
+io
+----
+
+	- Replaced the DataGenerator with PeakNegativeSampler
+	- PeakNegativeSampler takes in a set of peaks and separately a set of negatives and sample from these sets according to a provided ratio, rather than trying to merge the two into a single list
+	- PeakGenerator now extracts peaks and negatives separately and passes them into PeakNegativeSampler.
+	- Filters out regions based on an optionally provided exclusion list
+	- Filters out regions whose signal is larger than the 99th percentile multiplied by 1.2. This multiplication means that if the top 1st percentile is all similar, nothing is filtered out.
+
+
+
+
+
+Version 0.9.1
+=============
+
+Highlights
+----------
+
+	- Improved documentation in losses.py and performance.py
+	- Cast X as float in ChromBPNet code
+	- Improved automatic trimming logic based on actual receptive field
+	- When using ChromBPNet, resizes the bias model predictions when it is a 
+	different size than the accessibility model
+	- Add negative sampling ratio to the dataloader and BPNet training code
+	- Add optional learning rate scheduler to BPNet training
+
+
+
+Version 0.9.0
+=============
+
+Highlights
+----------
+
+	- Added support for specifying what device to use within the JSONs
+	- Added support for specifying what dtype to use within the JSONs
+
+pipeline-json
+-------------
+
+	- Added a new command-line function "pipeline-json"
+	- This function takes in filepaths to input data and generates a pipeline JSON
+	that can be modified or immediately run.
+
+pipeline
+--------
+
+	- Added support for processing .BAM/.SAM/.tsv/.tsv.gz files into stranded or
+	unstranded bigWigs before training the BPNet model using bam2bw
+	- Added support for calculating GC-matched negatives regions from the provided
+	peak file and FASTA file.
+
+
+
+Version 0.8.1
+==============
+
+Highlights
+----------
+
+	- Added robustness toward other characters in the nucleotide alphabet.
+	Anything not A, C, G, or T gets ignored. This robustness has been added to
+	PeakGenerator and the command line arguments.
+
+
+
+Version 0.8.0
+==============
+
+Highlights
+----------
+
+	- When training ChromBPNet bias models from the command line and no loci
+	are provided for training the bias model, the default is changed to inherit
+	from `negatives` instead of `loci`. Colloquially, when the user provides a
+	set of negatives and peak loci to train ChromBPNet, the default is now that
+	the bias model will be trained on the negatives instead of incorrectly on
+	the peaks.
+	- When calculating the maximum number of reads a negative region can have
+	when training the bias model, changed from using the minimum number of reads
+	in the peaks to the 1st quantile of reads because it is more robust.
+
+
+
+Version 0.7.4
+==============
+
+Highlights
+----------
+
+	- Re-added the `attribute.py` file back in with a `deep_lift_shap` function
+	that wraps tangermeme's function but passes in the layers that must be
+	registered. 
+
+
+
+Version 0.7.3
+==============
+
+Highlights
+----------
+
+	- Added `BasePairNet` in `bpnetlite.bpnet` which is an implementation of the
+	model from the official `basepairmodels`
+	- Added `BasePairNet.from_bpnet` to load TensorFlow-trained models from
+	`basepairmodels` into the PyTorch wrapper
+	- Removed a few dependencies that are no longer needed after using
+	tangermeme
+
+
+
+Version 0.7.2
+==============
+
+Highlights
+----------
+
+	- Complete inclusion of tangermeme as the backend for operations
+	- Remove the `predict` method for models in favor of `tangermeme.predict`
+	- Remove attribute.py in favor of `tangermeme.deep_lift_shap`
+	- Remove marginalization functions in favor of `tangermeme.marginalize`
+	- Remove plotting functions in favor of `tangermeme.plot`
+	- Alter the `bpnet` and `chrombpnet` command-line tools to account for
+	these changes.
+	- Add in `_Log` and `_Exp` as layers for the ChromBPNet model so that they
+	can be registered as non-linear functions for `deep_lift_shap`.
+
+
+
+Version 0.7.1
+==============
+
+Highlights
+----------
+
+	- Begin inclusion of tangermeme into the backend.
+
+
+
+Version 0.7.0
+==============
+
+Highlights
+----------
+
+	- Changed the function name from `calculate_attributions` to `attribute`
+	to be more in line with the `predict` and `marginalize` functions. The
+	functionality and usage should be the same.
+	- Changed the nomenclature from "interpret" to "attribute" to be more
+	consistent with the name of the function and what is used colloquially.
+
+
+
+Version 0.6.0
+==============
+
+Highlights
+----------
+
+	- Replaced the negative sampling code with a simpler approach that only
+	considers bins of signal rather than operates at bp resolution. This code
+	is much faster and more robust but may produce slightly worse GC matches.
+	- The negative sampling code now allows you to pass in a bigwig so that
+	only regions that pass a threshold are selected.
+
+
+
+Version 0.5.7
+==============
+
+Highlights
+----------
+
+	- Changed the `warning_threshold` argument to only print a warning rather
+	than end the process when the model exceeds it.
+	- Added support for plotting annotations alongside `plot_attributions` 
+	- Fixed various minor bugs.
+
+
+
+Version 0.5.6
+==============
+
+Highlights
+----------
+
+	- Changed the shape of the returned one-hot encoded sequences to match
+	the documentation.
+	- Fixed an issue with dinucleotide shuffling when not all nucleotides
+	are present.
+
+
+
+Version 0.5.5
+==============
+
+Highlights
+----------
+
+	- Fixed an issue with ChromBPNet reading.
+
+
+
+Version 0.5.4
+==============
+
+Highlights
+----------
+
+	- Added in reading of TensorFlow-formatted ChromBPNet models from the
+	official repo using the `from_chrombpnet` commands to the BPNet and
+	ChromBPNet objects.
+
+
+
+Version 0.5.2
+==============
+
+Highlights
+----------
+
+	- Fixed issue where non-linear operations in DeepLiftShap were not
+	registered correctly and hence causing minor divergences. Through the
+	use of an ugly wrapper object this has been fixed.
+	- Added in `print_convergence_deltas` and `warning_threshold` to the
+	`calculate_attributions` function and the `DeepLiftShap` object. The first
+	will print convergence deltas for every example that gets explained and the
+	second will raise a warning if the divergence is higher than it.
+
+
+
+Version 0.5.0
+==============
+
+Highlights
+----------
+
+	- Extended support for the `chrombpnet` command-line tool
+	- Now has mirrored functionality of the `bpnet` command-line tool
+	- `chrombpnet pipeline` now mirrors `bpnet pipeline` except that it will
+	run each of the reports on each of the three models: the full ChromBPNet
+	model, the accessibility model, and the bias model. It will train a bias
+	model and an accessibility model if not provided.
+	- Changed the ChromBPNet object to be compatible with the `bpnet` command
+	options.
+	- Fixed issue with attributions where performance would degrade over time.
+
+
+
+Version 0.4.0
+==============
+
+Highlights
+----------
+
+	- Extended support for the `bpnet` command-line tool
+	- Added in `marginalize` command-line option for generating those reports
+	- Added in `pipeline` command-line option for running a full pipeline from
+    model training to inference, attribution, tfmodisco, and marginalization
+
+
+
+Version 0.3.0
+==============
+
+Highlights
+----------
+
+	- I forgot.
+
+
+
+Version 0.2.0
+==============
+
+Highlights
+----------
+
+	- Addition of a `ChromBPNet` model
+	- Addition of an explicit, shared, `Logger` class
+	- "Peak" semantics have been switched to "locus" semantics
+
+
+chrombpnet.py
+-------------
+
+	- Newly added.
+	- This file contains the `ChromBPNet` class, which is a wrapper that
+	takes in two BPNet objects: a pre-trained bias model, and an untrained
+	accessibility model, and specifies the training procedure for training
+	the accessibility model.
+
+
+io.py
+-----
+
+	- The semantics of "peaks", e.g. `extract_peaks`, has been changed to loci,
+	e.g. `extract_loci`, and the associated keywords (now `loci` from `peaks`)
+	can take in a list or tuple of files to interleave them. This means you
+	can now train on peaks and background regions.
+
+
+logging.py
+----------
+
+	- Newly added.
+	- This file contains the `Logger` class which is a simple way to record
+	and display statistics during training.
+
+
+
