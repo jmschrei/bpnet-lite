@@ -6,6 +6,8 @@
 > [!IMPORTANT]
 > bpnet-lite is still under development. It is currently capable of loading models trained using the official Chrom/BPNet TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs. It can also train BPNet models to parity with the official BPNet repository. However, it does not perfectly match the procedure for training ChromBPNet bias models, and the ChromBPNet models do not always match the performance of those trained using the official ChromBPNet repository.
 
+[docs/tutorials](https://bpnet-lite.readthedocs.io/en/latest/)
+
 bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [[preprint](https://www.biorxiv.org/content/10.1101/2024.12.25.630221v2) | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. It has both a Python API and a set of command-line tools for training, using, and interpreting these models. This includes a complete pipeline that goes from preprocessing data, training and evaluating a model, calculating DeepLIFT/SHAP attributions using the model, running TF-MoDISco and seqlet calling/annotations on these attributions, and performing in silico marginalizations on a motif database.
 
 #### Installation
