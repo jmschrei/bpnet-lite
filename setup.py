@@ -6,7 +6,7 @@ setup(
     author='Jacob Schreiber',
     author_email='jmschreiber91@gmail.com',
     packages=['bpnetlite'],
-    scripts=['bpnet', 'chrombpnet'],
+    scripts=['bpnet'],
     url='https://github.com/jmschrei/bpnet-lite',
     license='LICENSE.txt',
     description='bpnet-lite is a minimal implementation of Chrom/BPNet, a neural network aimed at interpreting regulatory activity of the genome.',
