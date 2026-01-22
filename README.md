@@ -4,7 +4,7 @@
 
 
 > [!IMPORTANT]
-> bpnet-lite is still under development. It is currently capable of loading models trained using the official Chrom/BPNet TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs. It can also train BPNet models to parity with the official BPNet repository. However, it does not perfectly match the procedure for training ChromBPNet bias models, and the ChromBPNet models do not always match the performance of those trained using the official ChromBPNet repository.
+> bpnet-lite is still under development. It is currently capable of loading models trained using the official Chrom/BPNet TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs. It can also train BPNet models to parity with the official BPNet repository. However, it does not currently support training ChromBPNet models.
 
 [docs/tutorials](https://bpnet-lite.readthedocs.io/en/latest/)
 
