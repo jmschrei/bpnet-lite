@@ -499,7 +499,7 @@ if args.cmd == 'negatives':
 		out_window=args.out_window,
 		chroms=chroms,
 		verbose=args.verbose,
-		n_jobs=-1
+		n_jobs=1
 	)
 
 	matched_loci.to_csv(args.output, header=False, sep='\t', index=False)
@@ -968,7 +968,7 @@ elif args.cmd == 'pipeline':
 		parameters['loci'] = [pname + '_peaks.narrowPeak']
 		
 		if not parameters['dry_run']:
-			subprocess.run(args, check=True)
+			subprocess.run(args)
 
 	
 	###
@@ -1060,7 +1060,7 @@ elif args.cmd == 'pipeline':
 		parameters["negatives"] = [pname + ".negatives.bed"]
 
 		if not parameters['dry_run']:
-			subprocess.run(args, check=True)
+			subprocess.run(args)
 
 
 	###
@@ -1133,9 +1133,6 @@ elif args.cmd == 'pipeline':
 	# Step 3.2: Annotate seqlets using motif database
 	###
 
-	if parameters['verbose']:
-		print("\nStep 3.2: Seqlet annotation")
-
 	annotation_parameters = _extract_set(parameters, 
 		default_annotation_parameters, "annotation_parameters")
 	_check_set(annotation_parameters, "seqlet_filename", pname+".seqlets.bed")
@@ -1145,30 +1142,34 @@ elif args.cmd == 'pipeline':
 	annotation_parameters = merge_parameters(annotation_parameters, 
 		default_annotation_parameters)
 
-	cmd = ["ttl"]
-	cmd += ["-f", annotation_parameters["sequences"]]
-	cmd += ["-b", annotation_parameters["seqlet_filename"]]
-	cmd += ["-s", str(annotation_parameters["n_score_bins"])]
-	cmd += ["-m", str(annotation_parameters["n_median_bins"])]
-	cmd += ["-a", str(annotation_parameters["n_target_bins"])]
-	cmd += ["-c", str(annotation_parameters["n_cache"])]
-	cmd += ["-j", str(annotation_parameters["n_jobs"])]
-
-	if not annotation_parameters["reverse_complement"]:
-		cmd += ["-r"]
-
 	if annotation_parameters['motifs'] is not None:
-		cmd += ["-t", annotation_parameters["motifs"]]
+		if parameters['verbose']:
+			print("\nStep 3.2: Seqlet annotation")
 
-	if not parameters['dry_run']:
-		with open(annotation_parameters['output_filename'], "w") as f:
-			subprocess.run(cmd, check=True, stdout=f)
-
-	annotated_seqlets = pandas.read_csv(annotation_parameters['output_filename'],
-		sep="\t", header=None, usecols=(3,), names=['motifs'])
-
-	seqlet_count = annotated_seqlets.value_counts()
-	seqlet_count.to_csv(pname+".motif_seqlet_count.tsv", sep="\t")
+		cmd = ["ttl"]
+		cmd += ["-f", annotation_parameters["sequences"]]
+		cmd += ["-b", annotation_parameters["seqlet_filename"]]
+		cmd += ["-s", str(annotation_parameters["n_score_bins"])]
+		cmd += ["-m", str(annotation_parameters["n_median_bins"])]
+		cmd += ["-a", str(annotation_parameters["n_target_bins"])]
+		cmd += ["-c", str(annotation_parameters["n_cache"])]
+		cmd += ["-j", str(annotation_parameters["n_jobs"])]
+	
+		if not annotation_parameters["reverse_complement"]:
+			cmd += ["-r"]
+	
+		if annotation_parameters['motifs'] is not None:
+			cmd += ["-t", annotation_parameters["motifs"]]
+	
+		if not parameters['dry_run']:
+			with open(annotation_parameters['output_filename'], "w") as f:
+				subprocess.run(cmd, check=True, stdout=f)
+	
+		annotated_seqlets = pandas.read_csv(annotation_parameters['output_filename'],
+			sep="\t", header=None, usecols=(3,), names=['motifs'])
+	
+		seqlet_count = annotated_seqlets.value_counts()
+		seqlet_count.to_csv(pname+".motif_seqlet_count.tsv", sep="\t")
 
 
 	###
