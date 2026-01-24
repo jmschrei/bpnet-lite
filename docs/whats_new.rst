@@ -5,6 +5,32 @@
 Release History
 ===============
 
+Version 1.0.0
+=============
+
+highlights
+----------
+
+	- First major release!
+	- The pipeline has been simplified, cleaned up, and expanded.
+	- Support for training ChromBPNet models has been dropped.
+	- ReadTheDocs documentation has been added in the docs/ folder
+	- The example_jsons folder has been removed in favor of using the `pipeline-json` command
+
+
+bpnet
+-----
+
+	- The `predict` subcommand has been dropped and replaced with the `evaluate` subcommand
+	- Models are automatically evaluated on the validation set at the end of the `fit` subcommand
+	- MACS3 has been added as an optional preprocessing step to do peak calling
+	- All preprocessing arguments have been moved into `preprocessing_parameters` in the pipeline JSON
+	- Reports the number of trainable parameters in the model and its # filters/layers
+	- Moved the model architecture parameters into the `fit_parameters` JSON instead of the umbrella JSON
+	- Added a `-pe` argument to `pipeline-json` to specify if an input is paired end data for MACS3
+	- Removed the `find_negatives` argument from the umbrella JSON with the assumption that you need to find negatives if you have not provided a file with them.
+
+
 Version 0.9.5
 =============
 

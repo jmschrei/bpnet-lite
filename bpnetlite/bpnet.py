@@ -376,8 +376,6 @@ class BPNet(torch.nn.Module):
 			number of epochs has been hit without improvement in performance. 
 			Default is None.
 		"""
-
-		print("Warning: BPNet and ChromBPNet models trained using bpnet-lite may underperform those trained using the official repositories. See the GitHub README for further documentation.")
 		
 		if X_valid is not None:
 			y_valid_counts = y_valid.sum(dim=2)
