@@ -4,7 +4,9 @@
 
 
 > [!IMPORTANT]
-> bpnet-lite is still under development. It is currently capable of loading models trained using the official Chrom/BPNet TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs. It can also train BPNet models to parity with the official BPNet repository. However, it does not perfectly match the procedure for training ChromBPNet bias models, and the ChromBPNet models do not always match the performance of those trained using the official ChromBPNet repository.
+> bpnet-lite is still under development. It is currently capable of loading models trained using the official Chrom/BPNet TensorFlow/Keras repositories into PyTorch and perfectly reproducing their outputs. It can also train BPNet models to parity with the official BPNet repository. However, it does not currently support training ChromBPNet models.
+
+[docs/tutorials](https://bpnet-lite.readthedocs.io/en/latest/)
 
 bpnet-lite is a lightweight version of BPNet [[paper](https://www.nature.com/articles/s41588-021-00782-6) | [code](https://github.com/kundajelab/basepairmodels)] and ChromBPNet [[preprint](https://www.biorxiv.org/content/10.1101/2024.12.25.630221v2) | [code](https://github.com/kundajelab/chrombpnet)], containing PyTorch reference implementations of both models. It has both a Python API and a set of command-line tools for training, using, and interpreting these models. This includes a complete pipeline that goes from preprocessing data, training and evaluating a model, calculating DeepLIFT/SHAP attributions using the model, running TF-MoDISco and seqlet calling/annotations on these attributions, and performing in silico marginalizations on a motif database.
 
@@ -93,7 +95,7 @@ X_attr = deep_lift_shap(bpnet, X)
 ![image](https://github.com/jmschrei/bpnet-lite/assets/3916816/e6f9bbdf-f107-4b3e-8b97-dc552af2239c)
 
 > [!Warning]
-> Several users have reported that the performance of ChromBPNet models trained using bpnet-lite underperforms those trained using the official ChromBPNet repo. We are currently looking into this. Until we resolve the differences, please consider using the official repository for training your ChromBPNet models and then bpnet-lite for loading them into PyTorch. We have removed the chrombpnet command-line tool for training ChromBPNet models for now.
+> Several users have reported that the performance of ChromBPNet models trained using bpnet-lite underperforms those trained using the official ChromBPNet repo. Until we resolve these differences, we are removing support for *training* ChromBPNet models so as to not give a misleading impression of the performance these models can achieve. You can still load models trained using the official repository and use them as normal.
 
 ChromBPNet extends the original basepair-resolution modeling framework of BPNet to DNase-seq and ATAC-seq experiments. In these experiments, a more involved framework is necessary because the cutting enzymes themselves have a soft sequence preference that can distort the observed readouts. This means that if you care about the true basepair resolution shape of the profiles, e.g. you want to look at footprinting, you need to adjust the positioning of the reads by removing this bias. This is done in ChromBPNet through the initial training of a smaller BPNet model on background regions where the sequence bias is still present (the "bias model"), followed by freezing it and training a second larger model (the "accessibility model"), to predict the residual between the observed readouts in peaks and the predictions from the bias model. Together, the bias and accessibility models form a "ChromBPNet" model. Usually, the bias model is discarded after training the accessibility model, whose readouts can be viewed as de-biased versions of the experiments.
 
