@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from tangermeme.predict import predict
 
-torch.backends.cudnn.benchmark = True	
+#torch.backends.cudnn.benchmark = True	
 
 
 class ControlWrapper(torch.nn.Module):
@@ -50,7 +50,6 @@ class ControlWrapper(torch.nn.Module):
 		X_ctl = torch.zeros(X.shape[0], self.model.n_control_tracks,
 			X.shape[-1], dtype=X.dtype, device=X.device)
 		return self.model(X, X_ctl)
-
 	
 
 class _ProfileLogitScaling(torch.nn.Module):
@@ -376,6 +375,8 @@ class BPNet(torch.nn.Module):
 			number of epochs has been hit without improvement in performance. 
 			Default is None.
 		"""
+
+		print("Warning: BPNet and ChromBPNet models trained using bpnet-lite may underperform those trained using the official repositories. See the GitHub README for further documentation.")
 		
 		if X_valid is not None:
 			y_valid_counts = y_valid.sum(dim=2)
