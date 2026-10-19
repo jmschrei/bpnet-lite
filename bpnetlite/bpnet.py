@@ -829,7 +829,7 @@ class BasePairNet(torch.nn.Module):
 		conv_weight[:, :n_filters] = wph.dot(wpp) 
 		conv_weight[37, n_filters:] = extract("profile_predictions", k)[0, 2:]
 		model.fconv.weight = convert_w(conv_weight)
-		model.fconv.bias = (convert_b(extract("main_profile_head", b) + 
+		model.fconv.bias = (convert_b(extract("main_profile_head", b).dot(wpp) +
 			extract("profile_predictions", b)))
 		model.fconv.padding = ((model.fconv.weight.shape[-1] - 1) // 2,)
 
