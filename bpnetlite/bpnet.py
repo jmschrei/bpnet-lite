@@ -234,7 +234,9 @@ class BPNet(torch.nn.Module):
 
 		self.count_loss_weight = count_loss_weight
 		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
-		self.trimming = trimming or 47 + sum(2**i for i in range(1, n_layers+1))
+		if trimming is None:
+			trimming = 47 + sum(2**i for i in range(1, n_layers+1))
+		self.trimming = trimming
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
 		self.irelu = torch.nn.ReLU()
@@ -693,7 +695,9 @@ class BasePairNet(torch.nn.Module):
 
 		self.count_loss_weight = count_loss_weight
 		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
-		self.trimming = trimming or 2 ** n_layers
+		if trimming is None:
+			trimming = 2 ** n_layers
+		self.trimming = trimming
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
 		self.irelu = torch.nn.ReLU()

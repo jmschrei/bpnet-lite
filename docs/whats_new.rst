@@ -5,6 +5,15 @@
 Release History
 ===============
 
+Unreleased
+==========
+
+bpnet
+-----
+
+	- `BPNet` and `BasePairNet` now keep `trimming=0` when it is passed. The constructors set `self.trimming = trimming or <default>`, so 0 was replaced by the default (557 positions on each side for an 8-layer `BPNet`, 256 for an 8-layer `BasePairNet`), and a model whose outputs are as long as its inputs could not be built.
+
+
 Version 1.0.0
 =============
 
