@@ -114,7 +114,7 @@ class ChromBPNet(torch.nn.Module):
 		n0, n1 = acc_profile.shape[-1], bias_profile.shape[-1]
 		w = (n1 - n0) // 2
 		
-		y_profile = acc_profile + bias_profile[:, :, w:-w]
+		y_profile = acc_profile + bias_profile[:, :, w:n1-w]
 		y_counts = self._log(self._exp1(acc_counts) + self._exp2(bias_counts))
 		
 		return y_profile, y_counts

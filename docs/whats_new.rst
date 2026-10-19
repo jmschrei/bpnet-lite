@@ -15,6 +15,12 @@ bpnet
 	- The count head of `BPNet` and `BasePairNet` now averages over the output window extended by 37 positions on each side and clipped to the input, as it did already for trimming of 37 or more. With trimming below 37 the window's start, `start-37`, was negative and Python slicing counted it from the end, so the counts averaged only the last positions of the input (the last 37 at trimming 0) and `BPNet`'s control-track sum covered the same wrong positions.
 
 
+chrombpnet
+----------
+
+	- `ChromBPNet.forward` now works when the bias and accessibility models return profiles of the same length. It cropped the bias profile with `[w:-w]`, which is empty when `w` is 0, so adding it to the accessibility profile raised a `RuntimeError`.
+
+
 Version 1.0.0
 =============
 
