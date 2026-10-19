@@ -9,6 +9,9 @@ from tangermeme.utils import random_one_hot
 from bpnetlite.bpnet import BPNet
 from bpnetlite.chrombpnet import ChromBPNet
 
+from .chrombpnet_lite import bpnet_seq
+from .chrombpnet_lite import write_chrombpnet_lite
+
 
 torch.manual_seed(0)
 torch.use_deterministic_algorithms(True, warn_only=True)
@@ -50,3 +53,31 @@ def test_forward(bias_trimming, accessibility_trimming, X):
 		+ bias_profile[:, :, w:w+n])
 	assert torch.allclose(y_counts, torch.logsumexp(torch.cat([
 		accessibility_counts, bias_counts], dim=-1), dim=-1, keepdim=True))
+
+
+##
+
+
+# `chrombpnet` in the model_arch.py of Zenodo 8299711 adds the bias model's
+# logits to the accessibility model's and takes the logsumexp of their log
+# counts.
+def test_from_chrombpnet_lite(X, tmp_path):
+	bias_filename = str(tmp_path / "bias.h5")
+	accessibility_filename = str(tmp_path / "chrombpnet.h5")
+	bias_weights = write_chrombpnet_lite(bias_filename, random_state=0)
+	accessibility_weights = write_chrombpnet_lite(accessibility_filename,
+		accessibility=True, random_state=1)
+
+	model = ChromBPNet.from_chrombpnet_lite(bias_filename,
+		accessibility_filename)
+	with torch.no_grad():
+		y_profile, y_counts = model(X)
+
+	bias_logits, bias_logcounts = bpnet_seq(X, bias_weights)
+	logits, logcounts = bpnet_seq(X, accessibility_weights)
+
+	assert y_profile.shape == (8, 1, 100)
+	assert y_counts.shape == (8, 1)
+	assert torch.allclose(y_profile[:, 0], logits + bias_logits, atol=1e-5)
+	assert torch.allclose(y_counts, torch.logsumexp(torch.cat([logcounts,
+		bias_logcounts], dim=-1), dim=-1, keepdim=True), atol=1e-5)

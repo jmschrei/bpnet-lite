@@ -486,6 +486,16 @@ class BPNet(torch.nn.Module):
 		the bias model or the accessibility model, depending on what is encoded
 		in the stored file.
 
+		The architecture is `bpnet_seq` from the `model_arch.py` released with
+		ChromBPNet-lite models such as those of Nair, Ameen et al. (Zenodo
+		8299711): convolutions of width 25 at either end, and every convolution
+		padded with padding='same', so the profile is as long as the input and
+		the counts are averaged over every position. The returned model
+		therefore has a trimming of 0. Crop the profile afterwards to get a
+		shorter output window. Models built by `src/archs.py` in the
+		kundajelab/chrombpnet-lite repository use widths of 21 and 75 with
+		padding='valid', an architecture this method does not reproduce.
+
 
 		Parameters
 		----------
@@ -525,7 +535,7 @@ class BPNet(torch.nn.Module):
 		n_layers = max(layer_names) - 2
 
 		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
-			n_control_tracks=0, trimming=None)
+			n_control_tracks=0, trimming=0)
 
 		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
 			x[:]).permute(2, 1, 0))

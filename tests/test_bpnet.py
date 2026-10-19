@@ -9,6 +9,7 @@ from tangermeme.utils import random_one_hot
 from bpnetlite.bpnet import BPNet
 from bpnetlite.bpnet import BasePairNet
 
+from .chrombpnet_lite import bpnet_seq
 from .chrombpnet_lite import write_chrombpnet_lite
 
 from numpy.testing import assert_array_equal
@@ -122,3 +123,23 @@ def test_from_chrombpnet_lite_weights(layout, accessibility, tmp_path):
 	kernel, bias = weights['logcounts']
 	assert_array_equal(model.linear.weight.detach().numpy(), kernel.T)
 	assert_array_equal(model.linear.bias.detach().numpy(), bias)
+
+
+# The Keras model pads every convolution to keep its input length and averages
+# the counts over every position, so the loaded model must trim nothing.
+@pytest.mark.parametrize("n_layers", [3, 9])
+@pytest.mark.parametrize("accessibility", [False, True])
+def test_from_chrombpnet_lite_forward(n_layers, accessibility, X, tmp_path):
+	filename = str(tmp_path / "model.h5")
+	weights = write_chrombpnet_lite(filename, accessibility, n_layers=n_layers)
+	model = BPNet.from_chrombpnet_lite(filename)
+	assert model.trimming == 0
+
+	with torch.no_grad():
+		y_profile, y_counts = model(X)
+	logits, logcounts = bpnet_seq(X, weights, n_layers=n_layers)
+
+	assert y_profile.shape == (8, 1, 100)
+	assert y_counts.shape == (8, 1)
+	assert torch.allclose(y_profile[:, 0], logits, atol=1e-5)
+	assert torch.allclose(y_counts, logcounts, atol=1e-5)

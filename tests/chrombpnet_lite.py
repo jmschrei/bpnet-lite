@@ -14,7 +14,8 @@ def write_chrombpnet_lite(filename, accessibility=False, layout='save_weights',
 	n_filters=8, n_layers=3, random_state=0):
 	"""Write random ChromBPNet-lite weights in the layout Keras uses.
 
-	The architecture is `bpnet_seq` from ChromBPNet-lite's `model_arch.py`: a
+	The architecture is `bpnet_seq` from the `model_arch.py` released with
+	the ChromBPNet-lite models of Nair, Ameen et al. (Zenodo 8299711): a
 	Conv1D of width 25, `n_layers` dilated Conv1D of width 3 with residual
 	connections, a profile Conv1D of width 25 and a Dense layer named
 	`logcounts`. A bias model's file stores layer `conv1d_3` as
@@ -90,7 +91,7 @@ def write_chrombpnet_lite(filename, accessibility=False, layout='save_weights',
 
 
 def bpnet_seq(X, weights, n_layers=3):
-	"""The forward pass of `bpnet_seq` in ChromBPNet-lite's `model_arch.py`.
+	"""The forward pass of `bpnet_seq` in the `model_arch.py` of Zenodo 8299711.
 
 	Every Conv1D uses padding='same', so the profile logits are as long as the
 	input, and the log counts come from a GlobalAvgPool1D over every position
