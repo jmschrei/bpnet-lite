@@ -490,7 +490,9 @@ class BPNet(torch.nn.Module):
 		Parameters
 		----------
 		filename: str
-			The name of the h5 file that stores the trained model parameters.
+			The name of the h5 file that stores the trained model parameters,
+			either a whole model written by Keras's `model.save` or only its
+			weights, written by `model.save_weights`.
 
 
 		Returns
@@ -500,7 +502,7 @@ class BPNet(torch.nn.Module):
 		"""
 
 		h5 = h5py.File(filename, "r")
-		w = h5['model_weights']
+		w = h5['model_weights'] if 'model_weights' in h5 else h5
 
 		if 'model_1' in w.keys():
 			w = w['model_1']

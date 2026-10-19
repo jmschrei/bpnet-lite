@@ -9,6 +9,10 @@ from tangermeme.utils import random_one_hot
 from bpnetlite.bpnet import BPNet
 from bpnetlite.bpnet import BasePairNet
 
+from .chrombpnet_lite import write_chrombpnet_lite
+
+from numpy.testing import assert_array_equal
+
 
 torch.manual_seed(0)
 torch.use_deterministic_algorithms(True, warn_only=True)
@@ -93,3 +97,28 @@ def test_count_window_control(trimming, total, X_a30):
 
 	_, y_counts = model(X_a30, torch.ones(2, 1, 100))
 	assert torch.allclose(y_counts, torch.full((2, 1), float(total + 1)).log())
+
+
+##
+
+
+@pytest.mark.parametrize("layout", ["save", "save_weights"])
+@pytest.mark.parametrize("accessibility", [False, True])
+def test_from_chrombpnet_lite_weights(layout, accessibility, tmp_path):
+	filename = str(tmp_path / "model.h5")
+	weights = write_chrombpnet_lite(filename, accessibility, layout)
+	model = BPNet.from_chrombpnet_lite(filename)
+
+	assert model.n_filters == 8
+	assert model.n_layers == 3
+
+	convs = [model.iconv, *model.rconvs, model.fconv]
+	for i, conv in enumerate(convs, start=1):
+		kernel, bias = weights[i]
+		assert_array_equal(conv.weight.detach().numpy(),
+			kernel.transpose(2, 1, 0))
+		assert_array_equal(conv.bias.detach().numpy(), bias)
+
+	kernel, bias = weights['logcounts']
+	assert_array_equal(model.linear.weight.detach().numpy(), kernel.T)
+	assert_array_equal(model.linear.bias.detach().numpy(), bias)
