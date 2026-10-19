@@ -12,6 +12,7 @@ bpnet
 -----
 
 	- `BPNet` and `BasePairNet` now keep `trimming=0` when it is passed. The constructors set `self.trimming = trimming or <default>`, so 0 was replaced by the default (557 positions on each side for an 8-layer `BPNet`, 256 for an 8-layer `BasePairNet`), and a model whose outputs are as long as its inputs could not be built.
+	- The count head of `BPNet` and `BasePairNet` now averages over the output window extended by 37 positions on each side and clipped to the input, as it did already for trimming of 37 or more. With trimming below 37 the window's start, `start-37`, was negative and Python slicing counted it from the end, so the counts averaged only the last positions of the input (the last 37 at trimming 0) and `BPNet`'s control-track sum covered the same wrong positions.
 
 
 Version 1.0.0

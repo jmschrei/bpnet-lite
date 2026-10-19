@@ -304,9 +304,9 @@ class BPNet(torch.nn.Module):
 		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
 
 		# counts prediction
-		X = torch.mean(X[:, :, start-37:end+37], dim=2)
+		X = torch.mean(X[:, :, max(start-37, 0):end+37], dim=2)
 		if X_ctl is not None:
-			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], dim=(1, 2))
+			X_ctl = torch.sum(X_ctl[:, :, max(start-37, 0):end+37], dim=(1, 2))
 			X_ctl = X_ctl.unsqueeze(-1)
 			X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
 
@@ -767,7 +767,7 @@ class BasePairNet(torch.nn.Module):
 		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
 	
 		# counts prediction
-		X = torch.mean(X[:, :, start-37:end+37], dim=2)
+		X = torch.mean(X[:, :, max(start-37, 0):end+37], dim=2)
 		if X_ctl is not None:
 			X_ctl = torch.sum(X_ctl[:, :, start:end], dim=(1, 2))
 			X_ctl = X_ctl.unsqueeze(-1)
