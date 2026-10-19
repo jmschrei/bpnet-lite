@@ -5,6 +5,24 @@
 Release History
 ===============
 
+Unreleased
+==========
+
+bpnet
+-----
+
+	- `BPNet` and `BasePairNet` now keep `trimming=0` when it is passed. The constructors set `self.trimming = trimming or <default>`, so 0 was replaced by the default (557 positions on each side for an 8-layer `BPNet`, 256 for an 8-layer `BasePairNet`), and a model whose outputs are as long as its inputs could not be built.
+	- The count head of `BPNet` and `BasePairNet` now averages over the output window extended by 37 positions on each side and clipped to the input, as it did already for trimming of 37 or more. With trimming below 37 the window's start, `start-37`, was negative and Python slicing counted it from the end, so the counts averaged only the last positions of the input (the last 37 at trimming 0) and `BPNet`'s control-track sum covered the same wrong positions.
+	- `BPNet.from_chrombpnet_lite`, and through it `ChromBPNet.from_chrombpnet_lite`, now also reads files written by Keras's `model.save_weights`, which store the layers at the root of the file. It looked them up only under `model_weights`, where `model.save` puts them, and raised a `KeyError` on weights-only files such as the per-cluster ChromBPNet models released with Nair, Ameen et al. (Zenodo 8299711).
+	- `BPNet.from_chrombpnet_lite`, and through it `ChromBPNet.from_chrombpnet_lite`, now returns models with a trimming of 0, so their outputs match the Keras model they load: a profile as long as the input and counts averaged over every position. The loader pads the width-25 convolutions of these models to keep their length, but built the `BPNet` with the default trimming, 47 plus the sum of the dilations, which belongs to the width-21 and width-75 BPNet. An 8-layer model therefore averaged its counts over a central window instead of the whole input, and a 9-layer model, the default of the `model_arch.py` these models come with, returned an empty profile and NaN counts. Code that used the shorter profile of an 8-layer model should now crop the profile itself.
+
+
+chrombpnet
+----------
+
+	- `ChromBPNet.forward` now works when the bias and accessibility models return profiles of the same length. It cropped the bias profile with `[w:-w]`, which is empty when `w` is 0, so adding it to the accessibility profile raised a `RuntimeError`.
+
+
 Version 1.0.0
 =============
 

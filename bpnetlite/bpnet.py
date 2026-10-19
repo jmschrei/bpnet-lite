@@ -234,7 +234,9 @@ class BPNet(torch.nn.Module):
 
 		self.count_loss_weight = count_loss_weight
 		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
-		self.trimming = trimming or 47 + sum(2**i for i in range(1, n_layers+1))
+		if trimming is None:
+			trimming = 47 + sum(2**i for i in range(1, n_layers+1))
+		self.trimming = trimming
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
 		self.irelu = torch.nn.ReLU()
@@ -302,9 +304,9 @@ class BPNet(torch.nn.Module):
 		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
 
 		# counts prediction
-		X = torch.mean(X[:, :, start-37:end+37], dim=2)
+		X = torch.mean(X[:, :, max(start-37, 0):end+37], dim=2)
 		if X_ctl is not None:
-			X_ctl = torch.sum(X_ctl[:, :, start-37:end+37], dim=(1, 2))
+			X_ctl = torch.sum(X_ctl[:, :, max(start-37, 0):end+37], dim=(1, 2))
 			X_ctl = X_ctl.unsqueeze(-1)
 			X = torch.cat([X, torch.log(X_ctl+1)], dim=-1)
 
@@ -484,11 +486,23 @@ class BPNet(torch.nn.Module):
 		the bias model or the accessibility model, depending on what is encoded
 		in the stored file.
 
+		The architecture is `bpnet_seq` from the `model_arch.py` released with
+		ChromBPNet-lite models such as those of Nair, Ameen et al. (Zenodo
+		8299711): convolutions of width 25 at either end, and every convolution
+		padded with padding='same', so the profile is as long as the input and
+		the counts are averaged over every position. The returned model
+		therefore has a trimming of 0. Crop the profile afterwards to get a
+		shorter output window. Models built by `src/archs.py` in the
+		kundajelab/chrombpnet-lite repository use widths of 21 and 75 with
+		padding='valid', an architecture this method does not reproduce.
+
 
 		Parameters
 		----------
 		filename: str
-			The name of the h5 file that stores the trained model parameters.
+			The name of the h5 file that stores the trained model parameters,
+			either a whole model written by Keras's `model.save` or only its
+			weights, written by `model.save_weights`.
 
 
 		Returns
@@ -498,7 +512,7 @@ class BPNet(torch.nn.Module):
 		"""
 
 		h5 = h5py.File(filename, "r")
-		w = h5['model_weights']
+		w = h5['model_weights'] if 'model_weights' in h5 else h5
 
 		if 'model_1' in w.keys():
 			w = w['model_1']
@@ -521,7 +535,7 @@ class BPNet(torch.nn.Module):
 		n_layers = max(layer_names) - 2
 
 		model = BPNet(n_layers=n_layers, n_filters=n_filters, n_outputs=1,
-			n_control_tracks=0, trimming=None)
+			n_control_tracks=0, trimming=0)
 
 		convert_w = lambda x: torch.nn.Parameter(torch.tensor(
 			x[:]).permute(2, 1, 0))
@@ -693,7 +707,9 @@ class BasePairNet(torch.nn.Module):
 
 		self.count_loss_weight = count_loss_weight
 		self.name = name or "bpnet.{}.{}".format(n_filters, n_layers)
-		self.trimming = trimming or 2 ** n_layers
+		if trimming is None:
+			trimming = 2 ** n_layers
+		self.trimming = trimming
 
 		self.iconv = torch.nn.Conv1d(4, n_filters, kernel_size=21, padding=10)
 		self.irelu = torch.nn.ReLU()
@@ -763,7 +779,7 @@ class BasePairNet(torch.nn.Module):
 		y_profile = self.fconv(X_w_ctl)[:, :, start:end]
 	
 		# counts prediction
-		X = torch.mean(X[:, :, start-37:end+37], dim=2)
+		X = torch.mean(X[:, :, max(start-37, 0):end+37], dim=2)
 		if X_ctl is not None:
 			X_ctl = torch.sum(X_ctl[:, :, start:end], dim=(1, 2))
 			X_ctl = X_ctl.unsqueeze(-1)
